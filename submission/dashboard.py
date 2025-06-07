@@ -21,13 +21,57 @@ st.markdown("Dashboard ini menampilkan visualisasi data berdasarkan berbagai fit
 @st.cache_data
 def load_data():
     try:
-        # Try to read the uploaded file
-        df = pd.read_csv("data.csv")
-        st.success("Data berhasil dimuat dari file data.csv")
-        return df
-    except FileNotFoundError:
-        st.error("File 'data.csv' tidak ditemukan. Pastikan file sudah diupload.")
-        return None
+        # Try to read from different possible locations
+        possible_paths = [
+            "data.csv",
+            "./data.csv", 
+            "dataset/data.csv",
+            "data/data.csv"
+        ]
+        
+        df = None
+        for path in possible_paths:
+            try:
+                df = pd.read_csv(path)
+                st.success(f"Data berhasil dimuat dari {path}")
+                return df
+            except FileNotFoundError:
+                continue
+        
+        # If file not found, try to use file uploader
+        st.warning("File 'data.csv' tidak ditemukan di direktori. Silakan upload file CSV Anda.")
+        uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
+        
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file)
+            st.success("Data berhasil dimuat dari file yang diupload")
+            return df
+        else:
+            # Create sample data for demonstration
+            st.info("Menggunakan data sampel untuk demonstrasi. Upload file CSV Anda untuk analisis data sebenarnya.")
+            
+            # Sample data that mimics student academic data
+            np.random.seed(42)
+            n = 500
+            
+            data = {
+                'Student_ID': range(1, n+1),
+                'Age': np.random.randint(17, 25, n),
+                'Gender': np.random.choice(['Male', 'Female'], n),
+                'Application_mode': np.random.choice([1, 2, 17, 18, 39, 42, 43], n),
+                'Fathers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
+                'Mothers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
+                'Tuition_fees_up_to_date': np.random.choice([0, 1], n, p=[0.15, 0.85]),
+                'Scholarship_holder': np.random.choice([0, 1], n, p=[0.7, 0.3]),
+                'Grade_1st_semester': np.random.normal(13, 3, n).clip(0, 20),
+                'Grade_2nd_semester': np.random.normal(13, 3, n).clip(0, 20),
+                'Curricular_units_enrolled': np.random.randint(4, 8, n),
+                'Curricular_units_approved': np.random.randint(2, 8, n),
+                'Target': np.random.choice(['Dropout', 'Enrolled', 'Graduate'], n, p=[0.3, 0.4, 0.3])
+            }
+            
+            return pd.DataFrame(data)
+            
     except Exception as e:
         st.error(f"Error saat membaca file: {e}")
         return None
