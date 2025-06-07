@@ -21,18 +21,46 @@ st.markdown("Dashboard ini menampilkan visualisasi data berdasarkan berbagai fit
 @st.cache_data
 def load_csv_from_path():
     """Try to load CSV from various paths"""
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
     possible_paths = [
-        "data.csv",
+        "data.csv",  # Current working directory
+        os.path.join(script_dir, "data.csv"),  # Same directory as script
         "./data.csv", 
         "dataset/data.csv",
-        "data/data.csv"
+        "data/data.csv",
+        os.path.join(script_dir, "dataset", "data.csv"),
+        os.path.join(script_dir, "data", "data.csv")
     ]
     
-    for path in possible_paths:
+    # Also check for any CSV file in the current directory
+    current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+    if current_dir_files:
+        for csv_file in current_dir_files:
+            possible_paths.insert(0, csv_file)  # Add to beginning of list
+    
+    # Check script directory for CSV files too
+    try:
+        script_dir_files = [f for f in os.listdir(script_dir) if f.endswith('.csv')]
+        if script_dir_files:
+            for csv_file in script_dir_files:
+                possible_paths.insert(0, os.path.join(script_dir, csv_file))
+    except:
+        pass
+    
+    st.sidebar.write("**Mencari file CSV di lokasi berikut:**")
+    for path in possible_paths[:5]:  # Show first 5 paths being checked
+        st.sidebar.write(f"• {path}")
         try:
-            df = pd.read_csv(path)
-            return df, path
-        except FileNotFoundError:
+            if os.path.exists(path):
+                df = pd.read_csv(path)
+                st.sidebar.success(f"✅ Found: {path}")
+                return df, path
+            else:
+                st.sidebar.write(f"❌ Not found: {path}")
+        except Exception as e:
+            st.sidebar.write(f"❌ Error reading {path}: {str(e)[:50]}")
             continue
     
     return None, None
@@ -61,26 +89,45 @@ def create_sample_data():
     
     return pd.DataFrame(data)
 
+# Display current working directory info
+st.sidebar.subheader("Info Direktori")
+st.sidebar.write(f"Working Directory: {os.getcwd()}")
+st.sidebar.write(f"Script Directory: {os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else 'Unknown'}")
+
+# List all CSV files in current directory
+csv_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+if csv_files:
+    st.sidebar.write("**File CSV yang ditemukan:**")
+    for csv_file in csv_files:
+        st.sidebar.write(f"• {csv_file}")
+
 # Try to load data from file first
 df, file_path = load_csv_from_path()
 
 if df is not None:
-    st.success(f"Data berhasil dimuat dari {file_path}")
+    st.success(f"✅ Data berhasil dimuat dari: {file_path}")
+    st.info(f"Dataset memiliki {df.shape[0]} baris dan {df.shape[1]} kolom")
 else:
     # Show file uploader if no file found
-    st.warning("File 'data.csv' tidak ditemukan di direktori. Silakan upload file CSV Anda.")
+    st.warning("⚠️ File CSV tidak ditemukan secara otomatis. Silakan upload file CSV Anda.")
+    
+    # Show what files are available in current directory
+    all_files = os.listdir('.')
+    st.write("**File yang tersedia di direktori saat ini:**")
+    st.write(all_files[:10])  # Show first 10 files
+    
     uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
     
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
-            st.success("Data berhasil dimuat dari file yang diupload")
+            st.success("✅ Data berhasil dimuat dari file yang diupload")
         except Exception as e:
-            st.error(f"Error saat membaca file yang diupload: {e}")
+            st.error(f"❌ Error saat membaca file yang diupload: {e}")
             df = None
     else:
         # Use sample data if no file uploaded
-        st.info("Menggunakan data sampel untuk demonstrasi. Upload file CSV Anda untuk analisis data sebenarnya.")
+        st.info("📊 Menggunakan data sampel untuk demonstrasi. Upload file CSV Anda untuk analisis data sebenarnya.")
         df = create_sample_data()
 
 if df is not None:
@@ -271,4 +318,9 @@ if df is not None:
         st.metric("Total Nilai Hilang", missing_values)
 
 else:
-    st.error("Tidak dapat memuat data. Pastikan file 'data.csv' tersedia dan dapat dibaca.")
+    st.error("❌ Tidak dapat memuat data. Pastikan file CSV tersedia dan dapat dibaca.")
+    st.write("**Solusi yang bisa dicoba:**")
+    st.write("1. Pastikan file CSV berada di direktori yang sama dengan script Python")
+    st.write("2. Periksa nama file (case-sensitive)")
+    st.write("3. Pastikan file tidak sedang dibuka di aplikasi lain")
+    st.write("4. Upload file melalui file uploader di atas")
