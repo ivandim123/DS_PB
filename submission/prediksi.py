@@ -1,86 +1,58 @@
-import os
 import streamlit as st
 
-# Debug: Cek working directory dan file
-st.write("**Debug Info:**")
-st.write(f"Current working directory: {os.getcwd()}")
-st.write(f"Files in current directory: {os.listdir('.')}")
-
-# Cek apakah file model ada
-model_files = ['random_forest_model.pkl', 'decision_tree_model.pkl']
-for file in model_files:
-    exists = os.path.exists(file)
-    st.write(f"File '{file}' exists: {exists}")
-    if exists:
-        st.write(f"File size: {os.path.getsize(file)} bytes")
-        
-import streamlit as st
-import pandas as pd
-import numpy as np
-import random
-import joblib
-import io
-from sklearn.preprocessing import StandardScaler
-import plotly.express as px
-import plotly.graph_objects as go
-
-# Konfigurasi halaman
+# PENTING: st.set_page_config() HARUS DIPANGGIL PERTAMA KALI, SEBELUM IMPORT LAINNYA
 st.set_page_config(
     page_title="Student Status Prediction",
     page_icon="🎓",
     layout="wide"
 )
 
+import pandas as pd
+import numpy as np
+import random
+import joblib
+import io
+import os
+from sklearn.preprocessing import StandardScaler
+import plotly.express as px
+import plotly.graph_objects as go
+
 # Cache untuk loading model dan preprocessing
 @st.cache_resource
-@st.cache_resource
 def load_models():
-    """Load pre-trained models"""
-    import os
-    
-    # Debug info
-    current_dir = os.getcwd()
-    files_in_dir = os.listdir('.')
-    
-    st.write(f"**Loading models from:** {current_dir}")
-    st.write(f"**Available files:** {files_in_dir}")
-    
-    model_files = ['random_forest_model.pkl', 'decision_tree_model.pkl']
-    
-    for model_file in model_files:
-        if os.path.exists(model_file):
-            st.success(f"✅ Found: {model_file}")
-        else:
-            st.error(f"❌ Missing: {model_file}")
-    
+    """Load pre-trained models from submission folder"""
     try:
-        st.info("Loading Random Forest model...")
-        rf_model = joblib.load('random_forest_model.pkl')
-        st.success("✅ Random Forest loaded successfully")
-        
-        st.info("Loading Decision Tree model...")
-        dt_model = joblib.load('decision_tree_model.pkl')
-        st.success("✅ Decision Tree loaded successfully")
-        
+        # Model ada di folder submission/
+        rf_model = joblib.load('submission/random_forest_model.pkl')
+        dt_model = joblib.load('submission/decision_tree_model.pkl')
         return rf_model, dt_model
-        
     except FileNotFoundError as e:
-        st.error(f"❌ FileNotFoundError: {str(e)}")
-        st.error("Please ensure model files are in the same directory as your Streamlit script")
+        st.error(f"❌ Model files not found! Error: {str(e)}")
+        st.error("Please ensure 'random_forest_model.pkl' and 'decision_tree_model.pkl' are in the 'submission/' folder.")
+        
+        # Debug info
+        st.write("**Debug Info:**")
+        st.write(f"Current working directory: {os.getcwd()}")
+        st.write(f"Files in current directory: {os.listdir('.')}")
+        if os.path.exists('submission'):
+            st.write(f"Files in submission folder: {os.listdir('submission/')}")
+        else:
+            st.write("❌ 'submission' folder not found!")
+        
         return None, None
     except Exception as e:
         st.error(f"❌ Error loading models: {str(e)}")
-        st.error(f"Error type: {type(e).__name__}")
         return None, None
 
 @st.cache_data
 def load_default_data():
-    """Load default dataset"""
+    """Load default dataset from submission folder"""
     try:
-        df = pd.read_csv('data.csv', low_memory=False)
+        # Data juga ada di folder submission/
+        df = pd.read_csv('submission/data.csv', low_memory=False)
         return df
     except FileNotFoundError:
-        st.error("❌ Default dataset 'data.csv' not found!")
+        st.error("❌ Default dataset 'data.csv' not found in submission folder!")
         return None
 
 def preprocess_data(df_raw):
