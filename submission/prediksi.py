@@ -1,358 +1,597 @@
-import os
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import random
+import joblib
+import io
+import os
+from sklearn.preprocessing import StandardScaler
+import plotly.express as px
+import plotly.graph_objects as go
 
-# Set page configuration
+# PENTING: st.set_page_config() HARUS DIPANGGIL PERTAMA KALI, SEBELUM IMPORT LAINNYA
 st.set_page_config(
-    page_title="Dashboard Analisis Status Siswa",
+    page_title="Student Status Prediction",
+    page_icon="🎓",
     layout="wide"
 )
 
-# Set style
-sns.set(style="whitegrid")
+# Cache untuk loading model dan preprocessing
+@st.cache_resource
+def load_models():
+    """Load pre-trained models from submission folder"""
+    try:
+        # Model ada di folder submission/
+        rf_model = joblib.load('submission/random_forest_model.pkl')
+        dt_model = joblib.load('submission/decision_tree_model.pkl')
+        
+        # Asumsikan feature_names_in_ ada di model
+        if not hasattr(rf_model, 'feature_names_in_') or not hasattr(dt_model, 'feature_names_in_'):
+            st.error("❌ Model tidak memiliki atribut 'feature_names_in_'. Pastikan model disimpan dengan benar.")
+            st.stop() # Hentikan jika model tidak dimuat dengan benar atau tidak memiliki atribut yang diharapkan
 
-# Dashboard title
-st.title("Dashboard Analisis Status Siswa")
-st.markdown("Dashboard ini menampilkan visualisasi data dengan fokus pada status siswa (Dropout, Enrolled, Graduate).")
+        return rf_model, dt_model
+    except FileNotFoundError as e:
+        st.error(f"❌ File model tidak ditemukan! Error: {str(e)}")
+        st.error("Pastikan 'random_forest_model.pkl' dan 'decision_tree_model.pkl' berada di folder 'submission/'.")
+        
+        # Debug info
+        st.write("**Info Debug:**")
+        st.write(f"Direktori kerja saat ini: {os.getcwd()}")
+        st.write(f"File di direktori saat ini: {os.listdir('.')}")
+        if os.path.exists('submission'):
+            st.write(f"File di folder 'submission': {os.listdir('submission/')}")
+        else:
+            st.write("❌ Folder 'submission' tidak ditemukan!")
+            
+        return None, None
+    except Exception as e:
+        st.error(f"❌ Error saat memuat model: {str(e)}")
+        return None, None
 
 @st.cache_data
-def load_csv_from_path():
-    """Try to load CSV from various paths"""
-    # Get the directory where the script is located
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+def load_default_data():
+    """Load default dataset from submission folder"""
+    try:
+        # Data juga ada di folder submission/
+        df = pd.read_csv('submission/data.csv', low_memory=False)
+        return df
+    except FileNotFoundError:
+        st.error("❌ Dataset default 'data.csv' tidak ditemukan di folder submission!")
+        return None
+
+# Fungsi baru untuk mendapatkan pemetaan status
+def get_status_mapping(df_with_status):
+    """
+    Secara dinamis membuat pemetaan status dari data asli.
+    Digunakan untuk mengonversi prediksi numerik kembali ke label string.
+    """
+    if 'Status' in df_with_status.columns:
+        unique_statuses = sorted(df_with_status['Status'].unique())
+        # Pastikan ada 3 status yang diharapkan: Dropout, Enrolled, Graduate
+        if len(unique_statuses) == 3 and 'Dropout' in unique_statuses and 'Enrolled' in unique_statuses and 'Graduate' in unique_statuses:
+            # Tetapkan mapping yang konsisten berdasarkan urutan alfabet (jika model juga menggunakan ini)
+            # Atau sesuaikan dengan encoding yang pasti digunakan saat training model
+            return {0: 'Dropout', 1: 'Enrolled', 2: 'Graduate'} 
+        elif len(unique_statuses) >= 2: # Minimal 2 status unik diperlukan untuk pemetaan
+            # Fallback jika tidak sesuai 3 status yang diharapkan, tapi tetap buat mapping
+            # Perhatian: Ini mungkin tidak cocok jika urutan encoding model berbeda
+            return {i: status for i, status in enumerate(unique_statuses)}
+    # Pemetaan default jika kolom 'Status' tidak ditemukan atau ada masalah
+    # Ini harus sesuai dengan bagaimana label di-encode saat model dilatih
+    return {0: 'Dropout', 1: 'Enrolled', 2: 'Graduate'} # Fallback umum
+
+def preprocess_data(df_raw, scaler_path='submission/scaler.pkl', contains_status_col=True):
+    """
+    Melakukan preprocessing data serupa dengan preprocessing pelatihan.
+    Dapat menangani data dengan atau tanpa kolom 'Status'.
+    contains_status_col: True jika data mengandung kolom 'Status' (label asli).
+    """
+    df_clean = df_raw.copy()
     
-    possible_paths = [
-        "data.csv",  # Current working directory
-        os.path.join(script_dir, "data.csv"),  # Same directory as script
-        "./data.csv", 
-        "dataset/data.csv",
-        "data/data.csv",
-        os.path.join(script_dir, "dataset", "data.csv"),
-        os.path.join(script_dir, "data", "data.csv")
+    # Salin kolom 'Status' asli ke 'Status_Original' jika ada
+    if contains_status_col and 'Status' in df_clean.columns:
+        df_clean['Status_Original'] = df_clean['Status']
+        # Drop baris dengan NaN di semua kolom (jika ini yang dilakukan saat training)
+        df_clean = df_clean.dropna().reset_index(drop=True)
+    elif not contains_status_col: # Untuk data baru, drop NaN hanya pada fitur yang relevan
+        model_features = rf_model.feature_names_in_ if rf_model else []
+        df_clean = df_clean.dropna(subset=[col for col in model_features if col in df_clean.columns]).reset_index(drop=True)
+    
+    # Define features for capping and standardization (must match training features)
+    capping_features = [
+        'Age_at_enrollment',
+        'Admission_grade',
+        'Curricular_units_1st_sem_grade',
+        'Previous_qualification_grade',
+        'Course',
+        'Curricular_units_2nd_sem_grade'
     ]
     
-    # Also check for any CSV file in the current directory
-    current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
-    if current_dir_files:
-        for csv_file in current_dir_files:
-            possible_paths.insert(0, csv_file)  # Add to beginning of list
+    # Buat salinan sementara untuk preprocessing agar tidak mengubah df_clean terlalu dini
+    temp_df_for_processing = df_clean.copy() 
     
-    # Check script directory for CSV files too
-    try:
-        script_dir_files = [f for f in os.listdir(script_dir) if f.endswith('.csv')]
-        if script_dir_files:
-            for csv_file in script_dir_files:
-                possible_paths.insert(0, os.path.join(script_dir, csv_file))
-    except:
-        pass
-    
-    st.sidebar.write("**Mencari file CSV di lokasi berikut:**")
-    for path in possible_paths[:5]:  # Show first 5 paths being checked
-        st.sidebar.write(f"• {path}")
-        try:
-            if os.path.exists(path):
-                df = pd.read_csv(path)
-                st.sidebar.success(f"✅ Found: {path}")
-                return df, path
-            else:
-                st.sidebar.write(f"❌ Not found: {path}")
-        except Exception as e:
-            st.sidebar.write(f"❌ Error reading {path}: {str(e)[:50]}")
-            continue
-    
-    return None, None
+    existing_capped_features = [col for col in capping_features if col in temp_df_for_processing.columns]
 
-@st.cache_data
-def create_sample_data():
-    """Create sample data for demonstration"""
-    np.random.seed(42)
-    n = 500
-    
-    data = {
-        'Student_ID': range(1, n+1),
-        'Age': np.random.randint(17, 25, n),
-        'Gender': np.random.choice(['Male', 'Female'], n),
-        'Application_mode': np.random.choice([1, 2, 17, 18, 39, 42, 43], n),
-        'Fathers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
-        'Mothers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
-        'Tuition_fees_up_to_date': np.random.choice([0, 1], n, p=[0.15, 0.85]),
-        'Scholarship_holder': np.random.choice([0, 1], n, p=[0.7, 0.3]),
-        'Grade_1st_semester': np.random.normal(13, 3, n).clip(0, 20),
-        'Grade_2nd_semester': np.random.normal(13, 3, n).clip(0, 20),
-        'Curricular_units_enrolled': np.random.randint(4, 8, n),
-        'Curricular_units_approved': np.random.randint(2, 8, n),
-        'Target': np.random.choice(['Dropout', 'Enrolled', 'Graduate'], n, p=[0.3, 0.4, 0.3])
-    }
-    
-    return pd.DataFrame(data)
-
-# Display current working directory info
-st.sidebar.subheader("Info Direktori")
-st.sidebar.write(f"Working Directory: {os.getcwd()}")
-st.sidebar.write(f"Script Directory: {os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else 'Unknown'}")
-
-# List all CSV files in current directory
-csv_files = [f for f in os.listdir('.') if f.endswith('.csv')]
-if csv_files:
-    st.sidebar.write("**File CSV yang ditemukan:**")
-    for csv_file in csv_files:
-        st.sidebar.write(f"• {csv_file}")
-
-# Try to load data from file first
-df, file_path = load_csv_from_path()
-
-if df is not None:
-    st.success(f"✅ Data berhasil dimuat dari: {file_path}")
-    st.info(f"Dataset memiliki {df.shape[0]} baris dan {df.shape[1]} kolom")
-else:
-    # Show file uploader if no file found
-    st.warning("⚠️ File CSV tidak ditemukan secara otomatis. Silakan upload file CSV Anda.")
-    
-    # Show what files are available in current directory
-    all_files = os.listdir('.')
-    st.write("**File yang tersedia di direktori saat ini:**")
-    st.write(all_files[:10])  # Show first 10 files
-    
-    uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
-    
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.success("✅ Data berhasil dimuat dari file yang diupload")
-        except Exception as e:
-            st.error(f"❌ Error saat membaca file yang diupload: {e}")
-            df = None
-    else:
-        # Use sample data if no file uploaded
-        st.info("📊 Menggunakan data sampel untuk demonstrasi. Upload file CSV Anda untuk analisis data sebenarnya.")
-        df = create_sample_data()
-
-if df is not None:
-    # Ensure 'Target' column exists
-    if 'Target' not in df.columns:
-        st.error("Kolom 'Target' tidak ditemukan dalam dataset Anda. Pastikan dataset memiliki kolom 'Target' untuk analisis status siswa.")
-        st.stop() # Stop execution if no 'Target' column
-
-    # Display basic info about the dataset
-    st.sidebar.header("Informasi Dataset")
-    st.sidebar.write(f"Jumlah baris: {df.shape[0]}")
-    st.sidebar.write(f"Jumlah kolom: {df.shape[1]}")
-    
-    # Show column names and types
-    st.sidebar.subheader("Kolom dalam Dataset")
-    for col in df.columns:
-        col_type = "Numerik" if pd.api.types.is_numeric_dtype(df[col]) else "Kategorikal"
-        st.sidebar.write(f"• {col} ({col_type})")
-    
-    # Feature selection
-    st.sidebar.header("Pilih Fitur untuk Analisis Multivariat")
-    
-    # Exclude 'Student_ID' and 'Target' from features to analyze against target
-    features_for_analysis = [col for col in df.columns if col not in ['Student_ID', 'Target']]
-    selected_feature = st.sidebar.selectbox("Pilih Fitur untuk Dianalisis:", features_for_analysis)
-    
-    # Detect feature type
-    is_numeric = pd.api.types.is_numeric_dtype(df[selected_feature])
-    st.sidebar.write(f"Tipe fitur yang dipilih: {'Numerik' if is_numeric else 'Kategorikal'}")
-    
-    # --- Multivariate Analysis Section ---
-    st.markdown("---")
-    st.header("Analisis Multivariat terhadap Status Siswa (Target)")
-    st.markdown("Bagian ini menampilkan hubungan antara fitur yang dipilih dengan status siswa (Dropout, Enrolled, Graduate).")
-
-    plt.rcParams["figure.figsize"] = (12, 6)
-
-    # Visualization based on feature type
-    if is_numeric:
-        st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
-        st.info(f"Visualisasi ini menunjukkan bagaimana nilai '{selected_feature}' (misalnya, nilai ujian, usia) berbeda di antara siswa yang Dropout, Enrolled, dan Graduate.")
+    if existing_capped_features:
+        # Terapkan capping terlebih dahulu (jika ini urutan saat training)
+        # CATATAN PENTING: Untuk produksi, lebih baik menyimpan batas Q1/Q3/IQR dari data training asli
+        # dan menggunakannya di sini, bukan menghitung ulang dari data input.
+        # Namun, mengikuti pola kode asli Anda yang menghitung ulang.
+        for col in existing_capped_features:
+            Q1 = temp_df_for_processing[col].quantile(0.25)
+            Q3 = temp_df_for_processing[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            temp_df_for_processing[col] = np.clip(temp_df_for_processing[col], lower_bound, upper_bound)
         
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(x='Target', y=selected_feature, data=df, ax=ax, palette='viridis')
-        ax.set_title(f'Box Plot {selected_feature} vs. Target')
-        ax.set_xlabel('Status Siswa (Target)')
-        ax.set_ylabel(selected_feature)
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        st.pyplot(fig)
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.violinplot(x='Target', y=selected_feature, data=df, ax=ax, palette='plasma')
-        ax.set_title(f'Violin Plot {selected_feature} vs. Target')
-        ax.set_xlabel('Status Siswa (Target)')
-        ax.set_ylabel(selected_feature)
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        st.pyplot(fig)
-
-    else: # Categorical feature
-        st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
-        st.info(f"Visualisasi ini menunjukkan proporsi kategori '{selected_feature}' (misalnya, jenis kelamin, beasiswa) untuk setiap status siswa (Dropout, Enrolled, Graduate).")
-
-        fig, ax = plt.subplots(figsize=(12, 7))
-        # Use value_counts to get order for better visualization if many categories
-        order_values = df[selected_feature].value_counts().index
-        if len(order_values) > 10: # Limit for readability
-            order_values = order_values[:10]
-            st.warning(f"Menampilkan top 10 kategori untuk '{selected_feature}' karena terlalu banyak kategori.")
-
-        sns.countplot(x=selected_feature, hue='Target', data=df, ax=ax, order=order_values, palette='coolwarm')
-        ax.set_title(f'Count Plot {selected_feature} vs. Target')
-        ax.set_xlabel(selected_feature)
-        ax.set_ylabel('Jumlah Siswa')
-        plt.xticks(rotation=45, ha='right')
-        plt.legend(title='Status Siswa')
-        plt.tight_layout()
-        st.pyplot(fig)
-
-        # Show crosstab for categorical features
-        st.subheader(f"Tabel Kontingensi '{selected_feature}' dan 'Target'")
-        crosstab = pd.crosstab(df[selected_feature], df['Target'], normalize='index').style.format("{:.2%}")
-        st.dataframe(crosstab)
-        st.markdown("Tabel di atas menunjukkan persentase setiap kategori dari fitur yang dipilih untuk setiap status siswa.")
-
-    # --- Correlation Matrix (for numeric features vs. encoded target) ---
-    st.markdown("---")
-    st.header("Matriks Korelasi (Fitur Numerik vs. Target)")
-    st.info("Matriks ini menunjukkan seberapa kuat hubungan linear antara fitur numerik dan status 'Dropout'. Untuk keperluan korelasi, 'Dropout' diwakili sebagai 1 dan status lain sebagai 0.")
-
-    # Create a numerical representation of 'Target' for correlation
-    df_corr = df.copy()
-    df_corr['Is_Dropout'] = df_corr['Target'].apply(lambda x: 1 if x == 'Dropout' else 0)
-    
-    numeric_cols = df_corr.select_dtypes(include=np.number).columns.tolist()
-    # Ensure 'Is_Dropout' is included and 'Student_ID' is excluded if it exists
-    if 'Student_ID' in numeric_cols:
-        numeric_cols.remove('Student_ID')
-    
-    if 'Is_Dropout' not in numeric_cols:
-        numeric_cols.append('Is_Dropout')
-
-    if len(numeric_cols) > 1:
-        correlation_matrix = df_corr[numeric_cols].corr()
-
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5, ax=ax)
-        ax.set_title('Matriks Korelasi Fitur Numerik dan Status Dropout')
-        plt.tight_layout()
-        st.pyplot(fig)
-        st.markdown("Nilai korelasi mendekati 1 atau -1 menunjukkan hubungan yang kuat, sementara mendekati 0 menunjukkan hubungan yang lemah.")
-    else:
-        st.warning("Tidak cukup fitur numerik dalam dataset untuk membuat matriks korelasi.")
-
-    # --- Overall Distribution (Existing section, kept for completeness) ---
-    st.markdown("---")
-    st.subheader(f"Distribusi Keseluruhan '{selected_feature}'")
-    st.info(f"Visualisasi ini menampilkan distribusi fitur '{selected_feature}' secara keseluruhan tanpa membedakan status siswa.")
-    
-    try:
-        fig, ax = plt.subplots(figsize=(12, 6))
+        # Sekarang, terapkan scaling. Coba muat scaler yang sudah dilatih.
+        scaler = None
+        try:
+            scaler = joblib.load(scaler_path)
+            st.sidebar.info("✅ Scaler yang sudah dilatih dimuat untuk preprocessing.")
+            # Hanya transform fitur yang scaler tahu
+            features_to_transform_by_scaler = [f for f in existing_capped_features if f in scaler.feature_names_in_]
+            temp_df_for_processing[features_to_transform_by_scaler] = scaler.transform(temp_df_for_processing[features_to_transform_by_scaler])
+        except FileNotFoundError:
+            st.warning("⚠️ File scaler tidak ditemukan. Melatih scaler baru pada data yang disediakan. Pastikan preprocessing konsisten dengan pelatihan.")
+            scaler = StandardScaler()
+            temp_df_for_processing[existing_capped_features] = scaler.fit_transform(temp_df_for_processing[existing_capped_features])
+        except Exception as e:
+            st.error(f"❌ Error saat memuat atau menerapkan scaler: {e}. Melatih scaler baru.")
+            scaler = StandardScaler()
+            temp_df_for_processing[existing_capped_features] = scaler.fit_transform(temp_df_for_processing[existing_capped_features])
         
-        if is_numeric:
-            sns.histplot(df[selected_feature].dropna(), bins=30, kde=True, ax=ax)
-            ax.set_title(f"Distribusi {selected_feature}")
-            ax.set_xlabel(selected_feature)
-            ax.set_ylabel("Frekuensi")
+        # Perbarui df_clean dengan fitur yang sudah diproses dari temp_df_for_processing
+        for col in existing_capped_features:
+            df_clean[col] = temp_df_for_processing[col]
+
+    return df_clean, scaler, existing_capped_features
+
+
+def make_predictions(df_processed, rf_model, dt_model, include_real_status=False):
+    """
+    Melakukan prediksi pada data yang sudah diproses.
+    Jika include_real_status True, ia mengharapkan kolom 'Status_Original' dan menyertakannya.
+    Jika tidak, ia mengasumsikan data baru tanpa label yang diketahui.
+    """
+    try:
+        model_features = rf_model.feature_names_in_ # Fitur yang diharapkan oleh model
+        
+        # Pastikan semua fitur yang diperlukan ada di DataFrame yang diproses
+        missing_features = [f for f in model_features if f not in df_processed.columns]
+        if missing_features:
+            st.error(f"❌ Fitur yang diperlukan untuk prediksi tidak ada: {', '.join(missing_features)}. Pastikan data input Anda mengandung semua kolom yang diperlukan.")
+            return None, None
+
+        X_predict = df_processed[model_features]
+        
+        # Dapatkan status asli hanya jika diminta dan tersedia
+        status_original_col = []
+        if include_real_status and 'Status_Original' in df_processed.columns:
+            status_original_col = df_processed['Status_Original'].values
         else:
-            value_counts = df[selected_feature].value_counts()
-            if len(value_counts) <= 20:
-                if len(value_counts) > 10:
-                    sns.countplot(y=selected_feature, data=df, 
-                                  order=value_counts.index, ax=ax)
-                else:
-                    sns.countplot(x=selected_feature, data=df, 
-                                  order=value_counts.index, ax=ax)
-                    plt.xticks(rotation=45)
-            else:
-                top_values = value_counts.head(20)
-                sns.countplot(y=selected_feature, data=df[df[selected_feature].isin(top_values.index)], 
-                              order=top_values.index, ax=ax)
-                ax.set_title(f"Top 20 {selected_feature}")
+            status_original_col = ['N/A'] * len(df_processed) # Untuk data baru, status asli tidak diketahui
+
+        rf_pred = rf_model.predict(X_predict)
+        dt_pred = dt_model.predict(X_predict)
+        
+        # Buat hasil
+        results_data = {
+            'ID': range(1, len(df_processed) + 1),
+        }
+        
+        if include_real_status:
+            results_data['Status_Asli'] = status_original_col # Mengubah nama kolom menjadi 'Status_Asli'
+
+        results_data['Random_Forest_Prediction'] = rf_pred
+        results_data['Decision_Tree_Prediction'] = dt_pred
+
+        results = pd.DataFrame(results_data)
+        
+        # Ambil mapping dari data default
+        default_data_for_mapping = load_default_data()
+        status_mapping = get_status_mapping(default_data_for_mapping)
             
-            ax.set_xlabel("Jumlah")
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        
+        # Konversi prediksi numerik ke label jika diperlukan
+        if results['Random_Forest_Prediction'].dtype in ['int64', 'float64']:
+            results['Random_Forest_Prediction'] = results['Random_Forest_Prediction'].map(status_mapping)
+        if results['Decision_Tree_Prediction'].dtype in ['int64', 'float64']:
+            results['Decision_Tree_Prediction'] = results['Decision_Tree_Prediction'].map(status_mapping)
+            
+        return results, X_predict
+            
     except Exception as e:
-        st.error(f"Error saat membuat visualisasi: {e}")
-    
-    # --- Statistics section (Existing section, modified for target analysis) ---
-    st.markdown("---")
-    st.subheader("Statistik Deskriptif")
-    
-    if is_numeric:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Statistik Keseluruhan**")
-            st.write(df[selected_feature].describe())
-        
-        with col2:
-            st.markdown("**Informasi Tambahan**")
-            st.write(f"Jumlah nilai hilang: {df[selected_feature].isna().sum()}")
-            st.write(f"Jumlah nilai unik: {df[selected_feature].nunique()}")
-            
-        st.markdown(f"**Statistik '{selected_feature}' berdasarkan Status Siswa (Target)**")
-        group_stats = df.groupby('Target')[selected_feature].describe()
-        st.write(group_stats)
-        st.info("Tabel di atas menampilkan statistik ringkasan (rata-rata, standar deviasi, kuartil) dari fitur numerik untuk setiap kategori status siswa.")
-    else:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Distribusi Kategori Keseluruhan**")
-            value_counts = df[selected_feature].value_counts().reset_index()
-            value_counts.columns = [selected_feature, 'Jumlah']
-            st.write(value_counts.head(10))
-        
-        with col2:
-            st.markdown("**Informasi Tambahan**")
-            st.write(f"Jumlah kategori: {df[selected_feature].nunique()}")
-            st.write(f"Jumlah nilai hilang: {df[selected_feature].isna().sum()}")
-            
-        st.markdown(f"**Crosstab '{selected_feature}' dengan 'Target'**")
-        crosstab = pd.crosstab(df[selected_feature], df['Target'])
-        st.write(crosstab)
-        st.info("Tabel ini menunjukkan jumlah siswa untuk setiap kombinasi kategori fitur dan status siswa.")
-    
-    # Data preview
-    st.markdown("---")
-    if st.checkbox("Tampilkan Preview Data"):
-        st.subheader("Preview Data")
-        
-        # Show selected columns
-        preview_cols = [selected_feature, 'Target'] if 'Target' in df.columns else [selected_feature]
-        
-        # Add option to show all columns
-        if st.checkbox("Tampilkan semua kolom dataset"):
-            st.dataframe(df)
-        else:
-            st.dataframe(df[preview_cols])
-    
-    # Data summary
-    st.markdown("---")
-    st.subheader("Ringkasan Dataset")
-    
-    col1, col2, col3 = st.columns(3)
+        st.error(f"Error selama prediksi: {str(e)}")
+        return None, None
+
+def create_visualizations(results):
+    """Membuat visualisasi untuk prediksi"""
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.metric("Total Baris", df.shape[0])
+        st.subheader("📊 Distribusi Prediksi")
+        
+        # Menghitung prediksi untuk kedua model
+        rf_counts = results['Random_Forest_Prediction'].value_counts()
+        dt_counts = results['Decision_Tree_Prediction'].value_counts()
+        
+        # Pastikan semua kategori ada
+        all_categories = ['Graduate', 'Dropout', 'Enrolled']
+        rf_counts = rf_counts.reindex(all_categories, fill_value=0)
+        dt_counts = dt_counts.reindex(all_categories, fill_value=0)
+        
+        fig = go.Figure(data=[
+            go.Bar(name='Random Forest', x=rf_counts.index, y=rf_counts.values, marker_color='#2E8B57'),
+            go.Bar(name='Decision Tree', x=dt_counts.index, y=dt_counts.values, marker_color='#4682B4')
+        ])
+        fig.update_layout(
+            barmode='group', 
+            title="Prediksi Status Siswa berdasarkan Model",
+            xaxis_title="Status",
+            yaxis_title="Jumlah"
+        )
+        st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        st.metric("Total Kolom", df.shape[1])
-    
-    with col3:
-        missing_values = df.isnull().sum().sum()
-        st.metric("Total Nilai Hilang", missing_values)
+        st.subheader("🎯 Kesepakatan Model")
+        
+        # Memeriksa kesepakatan antara model
+        agreement = (results['Random_Forest_Prediction'] == results['Decision_Tree_Prediction']).sum()
+        total = len(results)
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=['Setuju', 'Tidak Setuju'],
+            values=[agreement, total - agreement],
+            hole=0.3,
+            marker_colors=['#2E8B57', '#DC143C']
+        )])
+        fig.update_layout(title=f"Kesepakatan Model: {agreement}/{total} ({agreement/total*100:.1f}%)")
+        st.plotly_chart(fig, use_container_width=True)
 
-else:
-    st.error("❌ Tidak dapat memuat data. Pastikan file CSV tersedia dan dapat dibaca.")
-    st.write("**Solusi yang bisa dicoba:**")
-    st.write("1. Pastikan file CSV berada di direktori yang sama dengan script Python")
-    st.write("2. Periksa nama file (case-sensitive)")
-    st.write("3. Pastikan file tidak sedang dibuka di aplikasi lain")
-    st.write("4. Upload file melalui file uploader di atas")
+def show_status_distribution(df):
+    """Menampilkan distribusi Status dalam dataset (hanya jika kolom 'Status' ada)"""
+    if 'Status' in df.columns:
+        st.subheader("📈 Distribusi Status Dataset (dari Data Default)")
+        
+        status_counts = df['Status'].value_counts()
+        
+        # Membuat pie chart
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
+        fig = go.Figure(data=[go.Pie(
+            labels=status_counts.index,
+            values=status_counts.values,
+            hole=0.3,
+            marker_colors=colors
+        )])
+        fig.update_layout(title="Distribusi Status Siswa dalam Dataset yang Dimuat")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            st.write("**Jumlah Status:**")
+            for status, count in status_counts.items():
+                percentage = (count / len(df)) * 100
+                st.write(f"• {status}: {count} ({percentage:.1f}%)")
+    else:
+        st.info("Dataset yang diunggah tidak memiliki kolom 'Status', sehingga distribusi status data asli tidak ditampilkan.")
+
+# Header aplikasi
+st.title("🎓 Prototipe Prediksi Status Siswa")
+st.markdown("*Gunakan prototipe ini untuk memprediksi apakah siswa baru akan Lulus, Drop Out, atau tetap Terdaftar.*")
+st.markdown("---")
+
+# Memuat model
+rf_model, dt_model = load_models()
+
+if rf_model is None or dt_model is None:
+    st.stop()
+
+# Dapatkan daftar fitur yang diharapkan oleh model
+model_expected_features = list(rf_model.feature_names_in_)
+
+# Sidebar untuk pengaturan
+st.sidebar.header("⚙️ Pengaturan Prediksi")
+
+# Pilihan mode input
+prediction_mode = st.sidebar.radio(
+    "Pilih Mode Prediksi:",
+    ["Prediksi untuk Satu Siswa (Input Manual)", "Prediksi untuk Sekelompok Siswa (Unggah CSV)", "Lihat Analisis Data Default"]
+)
+
+df_raw = None # Inisialisasi df_raw di luar blok kondisional
+
+if prediction_mode == "Lihat Analisis Data Default":
+    st.header("📋 Informasi & Analisis Dataset Default")
+    df_raw = load_default_data()
+    if df_raw is not None:
+        st.info(f"✅ Data default dimuat: {len(df_raw)} baris. Data ini mengandung label yang diketahui untuk tujuan analitis.")
+        
+        # Informasi dataset default
+        col1, col2, col3, col4 = st.columns(4)
+        with col1: st.metric("Total Baris", len(df_raw))
+        with col2: st.metric("Total Kolom", len(df_raw.columns))
+        with col3: st.metric("Nilai Hilang", df_raw.isnull().sum().sum())
+        with col4: st.metric("Kategori Status", df_raw['Status'].nunique() if 'Status' in df_raw.columns else "N/A")
+        
+        show_status_distribution(df_raw) # Tampilkan distribusi untuk data default
+        
+        with st.expander("Lihat Sampel Data Mentah (Default)"):
+            st.dataframe(df_raw.head())
+        
+        st.markdown("---")
+        st.header("🔮 Contoh Prediksi pada Data Default")
+        st.info("Bagian ini menunjukkan bagaimana model memprediksi pada sampel dataset default, termasuk status asli untuk perbandingan.")
+
+        max_samples = min(50, len(df_raw))
+        num_samples_default = st.slider(
+            "Jumlah sampel untuk diprediksi dari Data Default:",
+            min_value=1,
+            max_value=max_samples,
+            value=min(10, max_samples),
+            key="default_samples_slider"
+        )
+
+        if st.button("🚀 Jalankan Contoh Prediksi pada Data Default", key="run_default_predictions_button"):
+            with st.spinner("Memproses dan memprediksi pada data default..."):
+                # Preprocessing data default, termasuk 'Status_Original'
+                df_processed_default, _, _ = preprocess_data(df_raw, contains_status_col=True)
+                
+                # Ambil sampel acak dari data default yang sudah diproses untuk tampilan prediksi
+                sample_indices = random.sample(range(len(df_processed_default)), min(num_samples_default, len(df_processed_default)))
+                df_sample_for_pred = df_processed_default.iloc[sample_indices].copy()
+                
+                # Buat prediksi termasuk status asli
+                results_default, _ = make_predictions(df_sample_for_pred, rf_model, dt_model, include_real_status=True)
+
+            if results_default is not None:
+                st.success(f"✅ Contoh prediksi selesai untuk {len(results_default)} siswa dari data default!")
+                st.subheader("📋 Hasil Prediksi Contoh (Data Default)")
+                
+                def highlight_predictions(row):
+                    colors = []
+                    for col_name in row.index:
+                        if col_name in ['Random_Forest_Prediction', 'Decision_Tree_Prediction', 'Status_Asli']:
+                            if row[col_name] == 'Graduate':
+                                colors.append('background-color: #d4edda; color: #155724')
+                            elif row[col_name] == 'Dropout':
+                                colors.append('background-color: #f8d7da; color: #721c24')
+                            elif row[col_name] == 'Enrolled':
+                                colors.append('background-color: #fff3cd; color: #856404')
+                            else:
+                                colors.append('')
+                        else:
+                            colors.append('')
+                    return colors
+                
+                styled_results_default = results_default.style.apply(highlight_predictions, axis=1)
+                st.dataframe(styled_results_default, use_container_width=True)
+
+                create_visualizations(results_default) # Gunakan hasil default untuk visualisasi
+                st.subheader("📊 Ringkasan Prediksi Contoh (Data Default)")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1: st.write("**Prediksi Random Forest:**")
+                with col2: st.write("**Prediksi Decision Tree:**")
+                with col3: st.write("**Status Asli:**")
+                
+                rf_counts = results_default['Random_Forest_Prediction'].value_counts().reindex(['Graduate', 'Dropout', 'Enrolled'], fill_value=0)
+                dt_counts = results_default['Decision_Tree_Prediction'].value_counts().reindex(['Graduate', 'Dropout', 'Enrolled'], fill_value=0)
+                real_counts = results_default['Status_Asli'].value_counts().reindex(['Graduate', 'Dropout', 'Enrolled'], fill_value=0)
+
+                st.write(f"- Lulus: {rf_counts.get('Graduate', 0)}")
+                st.write(f"- Drop Out: {rf_counts.get('Dropout', 0)}")
+                st.write(f"- Terdaftar: {rf_counts.get('Enrolled', 0)}")
+                
+                st.write(f"- Lulus: {dt_counts.get('Graduate', 0)}")
+                st.write(f"- Drop Out: {dt_counts.get('Dropout', 0)}")
+                st.write(f"- Terdaftar: {dt_counts.get('Enrolled', 0)}")
+                
+                st.write(f"- Lulus: {real_counts.get('Graduate', 0)}")
+                st.write(f"- Drop Out: {real_counts.get('Dropout', 0)}")
+                st.write(f"- Terdaftar: {real_counts.get('Enrolled', 0)}")
+
+                csv_buffer = io.StringIO()
+                results_default.to_csv(csv_buffer, index=False)
+                csv_data = csv_buffer.getvalue()
+                st.download_button(
+                    label="📥 Unduh Hasil Contoh (Data Default) sebagai CSV",
+                    data=csv_data,
+                    file_name=f"default_data_predictions_sample_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+    else:
+        st.warning("Dataset default tidak dapat dimuat. Silakan periksa jalur file.")
+
+elif prediction_mode == "Prediksi untuk Satu Siswa (Input Manual)":
+    st.header("📝 Input Manual untuk Prediksi Status Siswa Tunggal")
+    st.info("Masukkan karakteristik siswa di bawah ini untuk mendapatkan prediksi status mereka.")
+
+    # Buat formulir input untuk fitur
+    input_data = {}
+    with st.form("manual_prediction_form"):
+        st.write("Silakan masukkan detail siswa:")
+        
+        # Atur input dalam kolom untuk tata letak yang lebih baik
+        cols = st.columns(3) # Sesuaikan jumlah kolom sesuai kebutuhan
+        
+        feature_idx = 0
+        for feature in model_expected_features:
+            if feature_idx % 3 == 0:
+                current_col = cols[0]
+            elif feature_idx % 3 == 1:
+                current_col = cols[1]
+            else:
+                current_col = cols[2]
+            
+            with current_col:
+                # Gunakan nilai default atau placeholder spesifik untuk setiap tipe/rentang fitur
+                if feature == 'Age_at_enrollment':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=15, max_value=80, value=20, key=f"manual_{feature}")
+                elif feature in ['Admission_grade', 'Curricular_units_1st_sem_grade', 'Curricular_units_2nd_sem_grade', 'Previous_qualification_grade']:
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0.0, max_value=200.0, value=120.0, step=0.1, key=f"manual_{feature}")
+                elif feature == 'Course': # Asumsikan Course adalah ID diskrit
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=1, max_value=999, value=33, step=1, key=f"manual_{feature}")
+                else: # Input numerik generik untuk fitur lainnya
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", value=0.0, key=f"manual_{feature}")
+            feature_idx += 1
+
+        submitted = st.form_submit_button("Dapatkan Prediksi")
+
+    if submitted:
+        input_df = pd.DataFrame([input_data])
+        
+        with st.spinner("Memprediksi status siswa..."):
+            # Preprocessing satu baris input
+            # contains_status_col=False karena ini adalah data baru, tidak berlabel
+            df_processed_single, _, _ = preprocess_data(input_df, contains_status_col=False)
+            
+            if df_processed_single.empty:
+                st.error("❌ Preprocessing menghasilkan data kosong. Silakan periksa nilai input Anda.")
+            else:
+                # Buat prediksi (tanpa status asli)
+                single_prediction_results, _ = make_predictions(df_processed_single, rf_model, dt_model, include_real_status=False)
+            
+                if single_prediction_results is not None:
+                    st.success("✅ Prediksi selesai!")
+                    st.subheader("🔮 Status Siswa yang Diprediksi")
+                    
+                    rf_pred_val = single_prediction_results['Random_Forest_Prediction'].iloc[0]
+                    dt_pred_val = single_prediction_results['Decision_Tree_Prediction'].iloc[0]
+
+                    st.write(f"**Random Forest Memprediksi:** <span style='font-size: 24px; color: {'#155724' if rf_pred_val == 'Graduate' else '#721c24' if rf_pred_val == 'Dropout' else '#856404'};'>**{rf_pred_val}**</span>", unsafe_allow_html=True)
+                    st.write(f"**Decision Tree Memprediksi:** <span style='font-size: 24px; color: {'#155724' if dt_pred_val == 'Graduate' else '#721c24' if dt_pred_val == 'Dropout' else '#856404'};'>**{dt_pred_val}**</span>", unsafe_allow_html=True)
+                    
+                    if rf_pred_val == dt_pred_val:
+                        st.info("Kedua model sepakat dalam prediksi!")
+                    else:
+                        st.warning("Model memberikan prediksi yang berbeda. Pertimbangkan untuk meninjau input.")
+
+                    with st.expander("Lihat Data Input yang Diproses untuk Prediksi"):
+                        st.dataframe(df_processed_single)
+else: # prediction_mode == "Prediksi untuk Sekelompok Siswa (Unggah CSV)"
+    st.header("📤 Unggah CSV untuk Prediksi Sekelompok Siswa")
+    st.info("Unggah file CSV yang mengandung fitur siswa (tanpa kolom 'Status') untuk mendapatkan prediksi untuk beberapa siswa.")
+
+    uploaded_file_batch = st.file_uploader(
+        "Pilih file CSV untuk prediksi sekelompok siswa:",
+        type=['csv'],
+        help="Unggah file CSV yang mengandung fitur siswa. JANGAN sertakan kolom 'Status' dalam file ini."
+    )
+    
+    if uploaded_file_batch is not None:
+        try:
+            df_batch_raw = pd.read_csv(uploaded_file_batch, low_memory=False)
+            st.success(f"✅ File berhasil diunggah: {len(df_batch_raw)} baris.")
+
+            if 'Status' in df_batch_raw.columns:
+                st.warning("⚠️ CSV yang diunggah mengandung kolom 'Status'. Kolom ini akan diabaikan untuk prediksi karena mode ini untuk inferensi data baru yang tidak berlabel.")
+                # Hapus kolom 'Status' secara eksplisit untuk inferensi
+                df_batch_raw = df_batch_raw.drop(columns=['Status'])
+
+            with st.spinner("Memproses data sekelompok siswa dan membuat prediksi..."):
+                # Preprocessing data sekelompok siswa
+                df_processed_batch, _, _ = preprocess_data(df_batch_raw, contains_status_col=False)
+                
+                if df_processed_batch.empty:
+                    st.error("❌ Preprocessing menghasilkan data kosong setelah menghilangkan NaN. Silakan periksa kualitas data file yang Anda unggah.")
+                else:
+                    # Buat prediksi sekelompok siswa (tanpa status asli)
+                    batch_prediction_results, _ = make_predictions(df_processed_batch, rf_model, dt_model, include_real_status=False)
+
+            if batch_prediction_results is not None:
+                st.success(f"✅ Prediksi sekelompok siswa selesai untuk {len(batch_prediction_results)} siswa!")
+                
+                st.subheader("📋 Hasil Prediksi Sekelompok Siswa")
+                # Tampilkan fitur input bersama dengan prediksi
+                final_results_df = df_batch_raw.copy()
+                final_results_df['Random_Forest_Prediction'] = batch_prediction_results['Random_Forest_Prediction']
+                final_results_df['Decision_Tree_Prediction'] = batch_prediction_results['Decision_Tree_Prediction']
+
+                # Sorot prediksi dalam dataframe
+                def highlight_batch_predictions(row):
+                    colors = [''] * len(row) # Default tanpa warna
+                    for i, col_name in enumerate(row.index):
+                        if col_name == 'Random_Forest_Prediction':
+                            if row[col_name] == 'Graduate': colors[i] = 'background-color: #d4edda; color: #155724'
+                            elif row[col_name] == 'Dropout': colors[i] = 'background-color: #f8d7da; color: #721c24'
+                            elif row[col_name] == 'Enrolled': colors[i] = 'background-color: #fff3cd; color: #856404'
+                        elif col_name == 'Decision_Tree_Prediction':
+                            if row[col_name] == 'Graduate': colors[i] = 'background-color: #d4edda; color: #155724'
+                            elif row[col_name] == 'Dropout': colors[i] = 'background-color: #f8d7da; color: #721c24'
+                            elif row[col_name] == 'Enrolled': colors[i] = 'background-color: #fff3cd; color: #856404'
+                    return colors
+
+                st.dataframe(final_results_df.style.apply(highlight_batch_predictions, axis=1), use_container_width=True)
+                
+                # Visualisasi
+                create_visualizations(batch_prediction_results)
+                
+                st.subheader("📊 Ringkasan Prediksi Sekelompok Siswa")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Prediksi Random Forest:**")
+                    rf_counts = batch_prediction_results['Random_Forest_Prediction'].value_counts().reindex(['Graduate', 'Dropout', 'Enrolled'], fill_value=0)
+                    for status, count in rf_counts.items():
+                        st.metric(f"RF - {status}", count)
+                with col2:
+                    st.write("**Prediksi Decision Tree:**")
+                    dt_counts = batch_prediction_results['Decision_Tree_Prediction'].value_counts().reindex(['Graduate', 'Dropout', 'Enrolled'], fill_value=0)
+                    for status, count in dt_counts.items():
+                        st.metric(f"DT - {status}", count)
+                
+                # Unduh hasil
+                csv_buffer = io.StringIO()
+                final_results_df.to_csv(csv_buffer, index=False)
+                csv_data = csv_buffer.getvalue()
+                
+                st.download_button(
+                    label="📥 Unduh Hasil Prediksi Sekelompok Siswa sebagai CSV",
+                    data=csv_data,
+                    file_name=f"student_status_batch_predictions_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+        except Exception as e:
+            st.error(f"❌ Error saat memproses file yang diunggah: {str(e)}")
+            st.warning("Pastikan file CSV Anda diformat dengan benar dan mengandung fitur yang diharapkan.")
+            
+    # Tampilkan informasi tentang format data yang diharapkan untuk inferensi
+    st.markdown("---")
+    st.header("📝 Format Data yang Diharapkan untuk Prediksi Baru")
+    st.markdown("""
+    Saat memberikan data baru (baik secara manual atau melalui unggahan CSV) untuk prediksi, input Anda **TIDAK BOLEH** mengandung kolom 'Status'.
+    
+    Model mengharapkan fitur numerik berikut:
+    
+    **Fitur yang penting untuk model (dan akan diproses):**
+    - `Age_at_enrollment`: Usia siswa saat pendaftaran (misalnya, 20)
+    - `Admission_grade`: Nilai yang diperoleh saat pendaftaran (misalnya, 120.5)
+    - `Curricular_units_1st_sem_grade`: Nilai semester pertama (misalnya, 14.2)
+    - `Previous_qualification_grade`: Nilai kualifikasi sebelumnya (misalnya, 130.0)
+    - `Course`: Pengidentifikasi mata kuliah (misalnya, 33)
+    - `Curricular_units_2nd_sem_grade`: Nilai semester kedua (misalnya, 15.1)
+    
+    **Fitur numerik lain yang diharapkan oleh model (jika ada di data pelatihan Anda):**
+    *(Daftar fitur numerik relevan lainnya dari `rf_model.feature_names_in_` Anda di sini)*
+    - Contoh: `Academic_record_score`, `Attendance_rate`, dll.
+    
+    **Catatan Penting:**
+    - Semua fitur input harus berupa numerik.
+    - Nilai yang hilang dalam fitur input akan dihilangkan (baris yang mengandung NaN). Pastikan kualitas data.
+    - Output prediksi akan menjadi salah satu dari: **Graduate** (Lulus), **Dropout** (Drop Out), atau **Enrolled** (Terdaftar).
+    """)
+    
+    # Tampilkan daftar fitur yang diharapkan dari model
+    if model_expected_features:
+        st.subheader("Fitur yang Diharapkan Model:")
+        st.code(", ".join(model_expected_features))
+    else:
+        st.warning("Tidak dapat menentukan fitur yang diharapkan model.")
+
+
+# Footer
+st.markdown("---")
+st.markdown("*Prototipe Prediksi Status Siswa - Model Random Forest & Decision Tree*")
