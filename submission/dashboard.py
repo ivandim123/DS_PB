@@ -7,7 +7,7 @@ import numpy as np
 
 # Set page configuration
 st.set_page_config(
-    page_title="Dashboard Analytics",
+    page_title="Dashboard Analisis Status Siswa",
     layout="wide"
 )
 
@@ -15,8 +15,8 @@ st.set_page_config(
 sns.set(style="whitegrid")
 
 # Dashboard title
-st.title("Dashboard Analytics")
-st.markdown("Dashboard ini menampilkan visualisasi data berdasarkan berbagai fitur.")
+st.title("Dashboard Analisis Status Siswa")
+st.markdown("Dashboard ini menampilkan visualisasi data dengan fokus pada status siswa (Dropout, Enrolled, Graduate).")
 
 @st.cache_data
 def load_csv_from_path():
@@ -131,6 +131,11 @@ else:
         df = create_sample_data()
 
 if df is not None:
+    # Ensure 'Target' column exists
+    if 'Target' not in df.columns:
+        st.error("Kolom 'Target' tidak ditemukan dalam dataset Anda. Pastikan dataset memiliki kolom 'Target' untuk analisis status siswa.")
+        st.stop() # Stop execution if no 'Target' column
+
     # Display basic info about the dataset
     st.sidebar.header("Informasi Dataset")
     st.sidebar.write(f"Jumlah baris: {df.shape[0]}")
@@ -143,98 +148,128 @@ if df is not None:
         st.sidebar.write(f"• {col} ({col_type})")
     
     # Feature selection
-    st.sidebar.header("Pilih Fitur untuk Divisualisasikan")
+    st.sidebar.header("Pilih Fitur untuk Analisis Multivariat")
     
-    # Get all columns for visualization
-    all_columns = list(df.columns)
-    selected_feature = st.sidebar.selectbox("Pilih Fitur Utama:", all_columns, index=0)
-    
-    # Option to select a grouping variable (for comparison)
-    grouping_options = ["Tidak ada"] + [col for col in df.columns if not pd.api.types.is_numeric_dtype(df[col]) and df[col].nunique() <= 10]
-    selected_grouping = st.sidebar.selectbox("Pilih Variabel Pembanding (opsional):", grouping_options)
+    # Exclude 'Student_ID' and 'Target' from features to analyze against target
+    features_for_analysis = [col for col in df.columns if col not in ['Student_ID', 'Target']]
+    selected_feature = st.sidebar.selectbox("Pilih Fitur untuk Dianalisis:", features_for_analysis)
     
     # Detect feature type
     is_numeric = pd.api.types.is_numeric_dtype(df[selected_feature])
-    st.sidebar.write(f"Tipe fitur: {'Numerik' if is_numeric else 'Kategorikal'}")
+    st.sidebar.write(f"Tipe fitur yang dipilih: {'Numerik' if is_numeric else 'Kategorikal'}")
     
-    # Main visualization
-    st.subheader(f"Distribusi Fitur '{selected_feature}'")
-    
+    # --- Multivariate Analysis Section ---
+    st.markdown("---")
+    st.header("Analisis Multivariat terhadap Status Siswa (Target)")
+    st.markdown("Bagian ini menampilkan hubungan antara fitur yang dipilih dengan status siswa (Dropout, Enrolled, Graduate).")
+
     plt.rcParams["figure.figsize"] = (12, 6)
-    
-    if selected_grouping != "Tidak ada":
-        # Create comparison visualization
-        st.subheader(f"Perbandingan berdasarkan '{selected_grouping}'")
+
+    # Visualization based on feature type
+    if is_numeric:
+        st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
+        st.info(f"Visualisasi ini menunjukkan bagaimana nilai '{selected_feature}' (misalnya, nilai ujian, usia) berbeda di antara siswa yang Dropout, Enrolled, dan Graduate.")
         
-        # Get unique groups
-        unique_groups = df[selected_grouping].unique()
-        unique_groups = [group for group in unique_groups if pd.notna(group)]
-        
-        if len(unique_groups) <= 5:  # Only show if not too many groups
-            cols = st.columns(min(len(unique_groups), 3))
-            
-            for i, group in enumerate(unique_groups):
-                group_data = df[df[selected_grouping] == group]
-                
-                with cols[i % 3]:
-                    st.markdown(f"**{selected_grouping}: {group}**")
-                    
-                    if not group_data.empty and not group_data[selected_feature].isna().all():
-                        fig, ax = plt.subplots(figsize=(8, 5))
-                        
-                        if is_numeric:
-                            # Histogram for numeric data
-                            sns.histplot(group_data[selected_feature].dropna(), 
-                                       bins=min(20, len(group_data)), 
-                                       kde=True, ax=ax)
-                            ax.set_title(f"{group}")
-                            ax.set_xlabel(selected_feature)
-                            ax.set_ylabel("Frekuensi")
-                        else:
-                            # Count plot for categorical data
-                            value_counts = group_data[selected_feature].value_counts()
-                            if not value_counts.empty:
-                                sns.countplot(y=selected_feature, data=group_data,
-                                            order=value_counts.index[:10], ax=ax)  # Show top 10
-                                ax.set_title(f"{group}")
-                                ax.set_xlabel("Jumlah")
-                        
-                        plt.xticks(rotation=45)
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                    else:
-                        st.info(f"Tidak ada data untuk {group}")
-        else:
-            st.warning(f"Terlalu banyak kategori dalam '{selected_grouping}' ({len(unique_groups)}). Menampilkan visualisasi gabungan.")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.boxplot(x='Target', y=selected_feature, data=df, ax=ax, palette='viridis')
+        ax.set_title(f'Box Plot {selected_feature} vs. Target')
+        ax.set_xlabel('Status Siswa (Target)')
+        ax.set_ylabel(selected_feature)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.violinplot(x='Target', y=selected_feature, data=df, ax=ax, palette='plasma')
+        ax.set_title(f'Violin Plot {selected_feature} vs. Target')
+        ax.set_xlabel('Status Siswa (Target)')
+        ax.set_ylabel(selected_feature)
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        st.pyplot(fig)
+
+    else: # Categorical feature
+        st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
+        st.info(f"Visualisasi ini menunjukkan proporsi kategori '{selected_feature}' (misalnya, jenis kelamin, beasiswa) untuk setiap status siswa (Dropout, Enrolled, Graduate).")
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+        # Use value_counts to get order for better visualization if many categories
+        order_values = df[selected_feature].value_counts().index
+        if len(order_values) > 10: # Limit for readability
+            order_values = order_values[:10]
+            st.warning(f"Menampilkan top 10 kategori untuk '{selected_feature}' karena terlalu banyak kategori.")
+
+        sns.countplot(x=selected_feature, hue='Target', data=df, ax=ax, order=order_values, palette='coolwarm')
+        ax.set_title(f'Count Plot {selected_feature} vs. Target')
+        ax.set_xlabel(selected_feature)
+        ax.set_ylabel('Jumlah Siswa')
+        plt.xticks(rotation=45, ha='right')
+        plt.legend(title='Status Siswa')
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # Show crosstab for categorical features
+        st.subheader(f"Tabel Kontingensi '{selected_feature}' dan 'Target'")
+        crosstab = pd.crosstab(df[selected_feature], df['Target'], normalize='index').style.format("{:.2%}")
+        st.dataframe(crosstab)
+        st.markdown("Tabel di atas menunjukkan persentase setiap kategori dari fitur yang dipilih untuk setiap status siswa.")
+
+    # --- Correlation Matrix (for numeric features vs. encoded target) ---
+    st.markdown("---")
+    st.header("Matriks Korelasi (Fitur Numerik vs. Target)")
+    st.info("Matriks ini menunjukkan seberapa kuat hubungan linear antara fitur numerik dan status 'Dropout'. Untuk keperluan korelasi, 'Dropout' diwakili sebagai 1 dan status lain sebagai 0.")
+
+    # Create a numerical representation of 'Target' for correlation
+    df_corr = df.copy()
+    df_corr['Is_Dropout'] = df_corr['Target'].apply(lambda x: 1 if x == 'Dropout' else 0)
     
-    # Overall distribution
+    numeric_cols = df_corr.select_dtypes(include=np.number).columns.tolist()
+    # Ensure 'Is_Dropout' is included and 'Student_ID' is excluded if it exists
+    if 'Student_ID' in numeric_cols:
+        numeric_cols.remove('Student_ID')
+    
+    if 'Is_Dropout' not in numeric_cols:
+        numeric_cols.append('Is_Dropout')
+
+    if len(numeric_cols) > 1:
+        correlation_matrix = df_corr[numeric_cols].corr()
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5, ax=ax)
+        ax.set_title('Matriks Korelasi Fitur Numerik dan Status Dropout')
+        plt.tight_layout()
+        st.pyplot(fig)
+        st.markdown("Nilai korelasi mendekati 1 atau -1 menunjukkan hubungan yang kuat, sementara mendekati 0 menunjukkan hubungan yang lemah.")
+    else:
+        st.warning("Tidak cukup fitur numerik dalam dataset untuk membuat matriks korelasi.")
+
+    # --- Overall Distribution (Existing section, kept for completeness) ---
+    st.markdown("---")
     st.subheader(f"Distribusi Keseluruhan '{selected_feature}'")
+    st.info(f"Visualisasi ini menampilkan distribusi fitur '{selected_feature}' secara keseluruhan tanpa membedakan status siswa.")
     
     try:
         fig, ax = plt.subplots(figsize=(12, 6))
         
         if is_numeric:
-            # Histogram for numeric data
             sns.histplot(df[selected_feature].dropna(), bins=30, kde=True, ax=ax)
             ax.set_title(f"Distribusi {selected_feature}")
             ax.set_xlabel(selected_feature)
             ax.set_ylabel("Frekuensi")
         else:
-            # Count plot for categorical data
             value_counts = df[selected_feature].value_counts()
-            if len(value_counts) <= 20:  # Show all if not too many
+            if len(value_counts) <= 20:
                 if len(value_counts) > 10:
                     sns.countplot(y=selected_feature, data=df, 
-                                order=value_counts.index, ax=ax)
+                                  order=value_counts.index, ax=ax)
                 else:
                     sns.countplot(x=selected_feature, data=df, 
-                                order=value_counts.index, ax=ax)
+                                  order=value_counts.index, ax=ax)
                     plt.xticks(rotation=45)
             else:
-                # Show only top 20
                 top_values = value_counts.head(20)
                 sns.countplot(y=selected_feature, data=df[df[selected_feature].isin(top_values.index)], 
-                            order=top_values.index, ax=ax)
+                              order=top_values.index, ax=ax)
                 ax.set_title(f"Top 20 {selected_feature}")
             
             ax.set_xlabel("Jumlah")
@@ -245,12 +280,11 @@ if df is not None:
     except Exception as e:
         st.error(f"Error saat membuat visualisasi: {e}")
     
-
-    # Statistics section
+    # --- Statistics section (Existing section, modified for target analysis) ---
+    st.markdown("---")
     st.subheader("Statistik Deskriptif")
     
     if is_numeric:
-        # Numeric statistics
         col1, col2 = st.columns(2)
         
         with col1:
@@ -262,16 +296,15 @@ if df is not None:
             st.write(f"Jumlah nilai hilang: {df[selected_feature].isna().sum()}")
             st.write(f"Jumlah nilai unik: {df[selected_feature].nunique()}")
             
-            if selected_grouping != "Tidak ada":
-                st.markdown(f"**Statistik berdasarkan {selected_grouping}**")
-                group_stats = df.groupby(selected_grouping)[selected_feature].describe()
-                st.write(group_stats)
+        st.markdown(f"**Statistik '{selected_feature}' berdasarkan Status Siswa (Target)**")
+        group_stats = df.groupby('Target')[selected_feature].describe()
+        st.write(group_stats)
+        st.info("Tabel di atas menampilkan statistik ringkasan (rata-rata, standar deviasi, kuartil) dari fitur numerik untuk setiap kategori status siswa.")
     else:
-        # Categorical statistics
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("**Distribusi Kategori**")
+            st.markdown("**Distribusi Kategori Keseluruhan**")
             value_counts = df[selected_feature].value_counts().reset_index()
             value_counts.columns = [selected_feature, 'Jumlah']
             st.write(value_counts.head(10))
@@ -281,28 +314,27 @@ if df is not None:
             st.write(f"Jumlah kategori: {df[selected_feature].nunique()}")
             st.write(f"Jumlah nilai hilang: {df[selected_feature].isna().sum()}")
             
-            if selected_grouping != "Tidak ada":
-                st.markdown(f"**Crosstab dengan {selected_grouping}**")
-                crosstab = pd.crosstab(df[selected_feature], df[selected_grouping])
-                st.write(crosstab)
+        st.markdown(f"**Crosstab '{selected_feature}' dengan 'Target'**")
+        crosstab = pd.crosstab(df[selected_feature], df['Target'])
+        st.write(crosstab)
+        st.info("Tabel ini menunjukkan jumlah siswa untuk setiap kombinasi kategori fitur dan status siswa.")
     
     # Data preview
+    st.markdown("---")
     if st.checkbox("Tampilkan Preview Data"):
         st.subheader("Preview Data")
         
         # Show selected columns
-        if selected_grouping != "Tidak ada":
-            preview_cols = [selected_feature, selected_grouping]
-        else:
-            preview_cols = [selected_feature]
+        preview_cols = [selected_feature, 'Target'] if 'Target' in df.columns else [selected_feature]
         
         # Add option to show all columns
-        if st.checkbox("Tampilkan semua kolom"):
+        if st.checkbox("Tampilkan semua kolom dataset"):
             st.dataframe(df)
         else:
             st.dataframe(df[preview_cols])
     
     # Data summary
+    st.markdown("---")
     st.subheader("Ringkasan Dataset")
     
     col1, col2, col3 = st.columns(3)
