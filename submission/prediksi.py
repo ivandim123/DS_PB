@@ -415,29 +415,140 @@ elif prediction_mode == "Prediksi untuk Satu Siswa (Input Manual)":
         st.write("Silakan masukkan detail siswa:")
         
         # Atur input dalam kolom untuk tata letak yang lebih baik
-        cols = st.columns(3) # Sesuaikan jumlah kolom sesuai kebutuhan
+        cols_per_row = 3
+        current_cols = st.columns(cols_per_row)
+        col_idx = 0
         
-        feature_idx = 0
-        for feature in model_expected_features:
-            if feature_idx % 3 == 0:
-                current_col = cols[0]
-            elif feature_idx % 3 == 1:
-                current_col = cols[1]
-            else:
-                current_col = cols[2]
-            
-            with current_col:
-                # Gunakan nilai default atau placeholder spesifik untuk setiap tipe/rentang fitur
-                if feature == 'Age_at_enrollment':
-                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=15, max_value=80, value=20, key=f"manual_{feature}")
-                elif feature in ['Admission_grade', 'Curricular_units_1st_sem_grade', 'Curricular_units_2nd_sem_grade', 'Previous_qualification_grade']:
-                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0.0, max_value=200.0, value=120.0, step=0.1, key=f"manual_{feature}")
-                elif feature == 'Course': # Asumsikan Course adalah ID diskrit
-                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=1, max_value=999, value=33, step=1, key=f"manual_{feature}")
-                else: # Input numerik generik untuk fitur lainnya
-                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", value=0.0, key=f"manual_{feature}")
-            feature_idx += 1
+        # Definisi mapping untuk fitur kategorikal
+        MARITAL_STATUS_OPTIONS = {
+            1: 'Single', 2: 'Married', 3: 'Widower', 4: 'Divorced', 
+            5: 'Facto union', 6: 'Legally separated'
+        }
+        DAYTIME_EVENING_OPTIONS = {1: 'Daytime', 0: 'Evening'}
+        YES_NO_OPTIONS = {1: 'Yes', 0: 'No'}
+        GENDER_OPTIONS = {1: 'Male', 0: 'Female'}
 
+        # Untuk fitur kategorikal dengan banyak pilihan, gunakan selectbox
+        # Untuk fitur kategorikal biner, bisa pakai radio atau selectbox
+        # Untuk numerik, pakai number_input dengan min/max
+
+        # Fungsi pembantu untuk membuat selectbox/radio dengan label dan nilai
+        def create_categorical_input(feature_name, options_dict, default_value_key, col):
+            display_options = list(options_dict.values())
+            default_index = display_options.index(options_dict[default_value_key])
+            selected_display_value = col.selectbox(
+                f"{feature_name.replace('_', ' ').title()}:",
+                options=display_options,
+                index=default_index,
+                key=f"manual_{feature_name}"
+            )
+            # Konversi kembali ke nilai numerik untuk model
+            return {v: k for k, v in options_dict.items()}[selected_display_value]
+
+        # Loop melalui fitur yang diharapkan model untuk membuat input
+        for feature in model_expected_features:
+            with current_cols[col_idx % cols_per_row]:
+                if feature == 'Marital_status':
+                    input_data[feature] = create_categorical_input(feature, MARITAL_STATUS_OPTIONS, 1, current_cols[col_idx % cols_per_row])
+                elif feature == 'Application_mode':
+                    # Angka dari 1 sampai 57, terlalu banyak untuk dropdown yang eksplisit
+                    # Mungkin better sebagai number input, atau hanya list pilihan yang sering muncul
+                    # Untuk prototype, number input dengan help text bisa jadi solusi
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=1, max_value=57, value=1, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == 'Application_order':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0, max_value=9, value=0, step=1, key=f"manual_{feature}")
+                elif feature == 'Course':
+                    # Sama seperti Application Mode, Course memiliki banyak ID
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=33, max_value=9991, value=9119, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == 'Daytime/evening_attendance':
+                    input_data[feature] = create_categorical_input(feature, DAYTIME_EVENING_OPTIONS, 1, current_cols[col_idx % cols_per_row])
+                elif feature == 'Previous_qualification':
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=1, max_value=43, value=1, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == 'Previous_qualification_(grade)': # Perhatikan underscore/spasi
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0.0, max_value=200.0, value=120.0, step=0.1, key=f"manual_{feature}")
+                elif feature == 'Nacionality':
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=1, max_value=109, value=1, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == "Mother's_qualification":
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=1, max_value=44, value=1, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == "Father's_qualification":
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=1, max_value=44, value=1, step=1, 
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == "Mother's_occupation":
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=0, max_value=194, value=99, step=1, # 99 is blank
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == "Father's_occupation":
+                    input_data[feature] = st.number_input(
+                        f"{feature.replace('_', ' ').title()}:", 
+                        min_value=0, max_value=195, value=99, step=1, # 99 is blank
+                        help="Lihat 'Format Data yang Diharapkan' di bawah untuk daftar kode.",
+                        key=f"manual_{feature}"
+                    )
+                elif feature == 'Admission_grade': # Sudah ada di capping_features
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0.0, max_value=200.0, value=120.0, step=0.1, key=f"manual_{feature}")
+                elif feature == 'Displaced':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 0, current_cols[col_idx % cols_per_row])
+                elif feature == 'Educational_special_needs':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 0, current_cols[col_idx % cols_per_row])
+                elif feature == 'Debtor':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 0, current_cols[col_idx % cols_per_row])
+                elif feature == 'Tuition_fees_up_to_date':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 1, current_cols[col_idx % cols_per_row])
+                elif feature == 'Gender':
+                    input_data[feature] = create_categorical_input(feature, GENDER_OPTIONS, 1, current_cols[col_idx % cols_per_row])
+                elif feature == 'Scholarship_holder':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 0, current_cols[col_idx % cols_per_row])
+                elif feature == 'Age_at_enrollment': # Sudah ada di capping_features
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=15, max_value=80, value=20, key=f"manual_{feature}")
+                elif feature == 'International':
+                    input_data[feature] = create_categorical_input(feature, YES_NO_OPTIONS, 0, current_cols[col_idx % cols_per_row])
+                elif feature == 'Curricular_units_1st_sem_credited':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0, max_value=30, value=0, step=1, key=f"manual_{feature}")
+                elif feature == 'Curricular_units_1st_sem_enrolled':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0, max_value=30, value=6, step=1, key=f"manual_{feature}")
+                elif feature == 'Curricular_units_1st_sem_evaluations':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0, max_value=30, value=6, step=1, key=f"manual_{feature}")
+                elif feature == 'Curricular_units_1st_sem_approved':
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0, max_value=30, value=5, step=1, key=f"manual_{feature}")
+                elif feature == 'Curricular_units_2nd_sem_grade': # Sudah ada di capping_features
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()}:", min_value=0.0, max_value=200.0, value=120.0, step=0.1, key=f"manual_{feature}")
+                else:
+                    # Generic number input for any other numeric feature not explicitly listed
+                    input_data[feature] = st.number_input(f"{feature.replace('_', ' ').title()} (Other Numeric):", value=0.0, key=f"manual_{feature}")
+            col_idx += 1
+        
         submitted = st.form_submit_button("Dapatkan Prediksi")
 
     if submitted:
@@ -565,29 +676,67 @@ else: # prediction_mode == "Prediksi untuk Sekelompok Siswa (Unggah CSV)"
     Saat memberikan data baru (baik secara manual atau melalui unggahan CSV) untuk prediksi, input Anda **TIDAK BOLEH** mengandung kolom 'Status'.
     
     Model mengharapkan fitur numerik berikut:
+    """)
     
-    **Fitur yang penting untuk model (dan akan diproses):**
-    - `Age_at_enrollment`: Usia siswa saat pendaftaran (misalnya, 20)
-    - `Admission_grade`: Nilai yang diperoleh saat pendaftaran (misalnya, 120.5)
-    - `Curricular_units_1st_sem_grade`: Nilai semester pertama (misalnya, 14.2)
-    - `Previous_qualification_grade`: Nilai kualifikasi sebelumnya (misalnya, 130.0)
-    - `Course`: Pengidentifikasi mata kuliah (misalnya, 33)
-    - `Curricular_units_2nd_sem_grade`: Nilai semester kedua (misalnya, 15.1)
+    st.subheader("Fitur Penting yang Diproses (Capping + Standarisasi):")
+    st.markdown("""
+    - **`Age_at_enrollment`**: Usia siswa saat pendaftaran (numerik)
+    - **`Admission_grade`**: Nilai yang diperoleh saat pendaftaran (numerik, 0-200)
+    - **`Curricular_units_1st_sem_grade`**: Nilai semester pertama (numerik, 0-200)
+    - **`Previous_qualification_grade`**: Nilai kualifikasi sebelumnya (numerik, 0-200)
+    - **`Course`**: Pengidentifikasi mata kuliah (numerik, lihat daftar kode di bawah)
+    - **`Curricular_units_2nd_sem_grade`**: Nilai semester kedua (numerik, 0-200)
+    """)
+
+    st.subheader("Fitur Kategorikal (dengan kode numerik):")
+    st.markdown("""
+    - **`Marital_status`**: (1-6) 
+        1 - single, 2 - married, 3 - widower, 4 - divorced, 5 - facto union, 6 - legally separated
+    - **`Application_mode`**: (1, 2, 5, 7, 10, 15, 16, 17, 18, 26, 27, 39, 42, 43, 44, 51, 53, 57)
+    - **`Daytime/evening_attendance`**: (0-1) 
+        0 - evening, 1 - daytime
+    - **`Previous_qualification`**: (1, 2, 3, 4, 5, 6, 9, 10, 12, 14, 15, 19, 38, 39, 40, 42, 43)
+    - **`Nacionality`**: (1, 2, 6, 11, 13, 14, 17, 21, 22, 24, 25, 26, 32, 41, 62, 100, 101, 103, 105, 108, 109)
+    - **`Mother's_qualification`**: (Kode numerik, 1-44)
+    - **`Father's_qualification`**: (Kode numerik, 1-44)
+    - **`Mother's_occupation`**: (Kode numerik, 0-194)
+    - **`Father's_occupation`**: (Kode numerik, 0-195)
+    - **`Displaced`**: (0-1) 
+        0 - no, 1 - yes
+    - **`Educational_special_needs`**: (0-1) 
+        0 - no, 1 - yes
+    - **`Debtor`**: (0-1) 
+        0 - no, 1 - yes
+    - **`Tuition_fees_up_to_date`**: (0-1) 
+        0 - no, 1 - yes
+    - **`Gender`**: (0-1) 
+        0 - female, 1 - male
+    - **`Scholarship_holder`**: (0-1) 
+        0 - no, 1 - yes
+    - **`International`**: (0-1) 
+        0 - no, 1 - yes
+    """)
+
+    st.subheader("Fitur Numerik Lain:")
+    st.markdown("""
+    - **`Application_order`**: (numerik, 0-9)
+    - **`Curricular_units_1st_sem_credited`**: (numerik, 0-30)
+    - **`Curricular_units_1st_sem_enrolled`**: (numerik, 0-30)
+    - **`Curricular_units_1st_sem_evaluations`**: (numerik, 0-30)
+    - **`Curricular_units_1st_sem_approved`**: (numerik, 0-30)
+    """)
     
-    **Fitur numerik lain yang diharapkan oleh model (jika ada di data pelatihan Anda):**
-    *(Daftar fitur numerik relevan lainnya dari `rf_model.feature_names_in_` Anda di sini)*
-    - Contoh: `Academic_record_score`, `Attendance_rate`, dll.
-    
+    st.markdown("""
     **Catatan Penting:**
-    - Semua fitur input harus berupa numerik.
+    - Semua fitur input harus berupa numerik (bahkan untuk kategori, gunakan kodenya).
     - Nilai yang hilang dalam fitur input akan dihilangkan (baris yang mengandung NaN). Pastikan kualitas data.
     - Output prediksi akan menjadi salah satu dari: **Graduate** (Lulus), **Dropout** (Drop Out), atau **Enrolled** (Terdaftar).
     """)
     
-    # Tampilkan daftar fitur yang diharapkan dari model
+    # Tampilkan daftar fitur yang diharapkan dari model (untuk debugging/referensi)
     if model_expected_features:
-        st.subheader("Fitur yang Diharapkan Model:")
-        st.code(", ".join(model_expected_features))
+        st.subheader("Daftar Lengkap Fitur yang Diharapkan Model:")
+        st.code(str(model_expected_features)) # Tampilkan sebagai string untuk menghindari pemformatan list yang panjang
     else:
         st.warning("Tidak dapat menentukan fitur yang diharapkan model.")
 
