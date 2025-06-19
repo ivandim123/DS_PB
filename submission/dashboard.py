@@ -84,7 +84,8 @@ def create_sample_data():
         'Grade_2nd_semester': np.random.normal(13, 3, n).clip(0, 20),
         'Curricular_units_enrolled': np.random.randint(4, 8, n),
         'Curricular_units_approved': np.random.randint(2, 8, n),
-        'Target': np.random.choice(['Dropout', 'Enrolled', 'Graduate'], n, p=[0.3, 0.4, 0.3])
+        # Menggunakan 'Status' sebagai nama kolom di data sampel
+        'Status': np.random.choice(['Dropout', 'Enrolled', 'Graduate'], n, p=[0.3, 0.4, 0.3])
     }
     
     return pd.DataFrame(data)
@@ -130,11 +131,16 @@ else:
         st.info("📊 Menggunakan data sampel untuk demonstrasi. Upload file CSV Anda untuk analisis data sebenarnya.")
         df = create_sample_data()
 
+# --- START PERUBAHAN DI SINI ---
 if df is not None:
-    # Ensure 'Target' column exists
-    if 'Target' not in df.columns:
-        st.error("Kolom 'Target' tidak ditemukan dalam dataset Anda. Pastikan dataset memiliki kolom 'Target' untuk analisis status siswa.")
-        st.stop() # Stop execution if no 'Target' column
+    # Cek apakah kolom 'Status' ada dan ganti namanya menjadi 'Target'
+    if 'Status' in df.columns:
+        df = df.rename(columns={'Status': 'Target'})
+        st.sidebar.success("Kolom 'Status' ditemukan dan diganti namanya menjadi 'Target'.")
+    elif 'Target' not in df.columns: # Jika tidak ada 'Status' dan tidak ada 'Target'
+        st.error("Kolom 'Status' atau 'Target' tidak ditemukan dalam dataset Anda. Pastikan dataset memiliki salah satu kolom tersebut untuk analisis status siswa.")
+        st.stop() # Hentikan eksekusi jika tidak ada kolom status
+# --- AKHIR PERUBAHAN DI SINI ---
 
     # Display basic info about the dataset
     st.sidebar.header("Informasi Dataset")
