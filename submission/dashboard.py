@@ -174,51 +174,81 @@ if df is not None:
     # Visualization based on feature type
     if is_numeric:
         st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
-        st.info(f"Visualisasi ini menunjukkan bagaimana nilai '{selected_feature}' (misalnya, nilai ujian, usia) berbeda di antara siswa yang Dropout, Enrolled, dan Graduate.")
+        st.info(f"Visualisasi ini menunjukkan bagaimana rata-rata atau distribusi nilai '{selected_feature}' (misalnya, nilai ujian, usia) berbeda di antara siswa yang Dropout, Enrolled, dan Graduate.")
         
+        # Menggunakan Bar Chart untuk rata-rata atau Median per kelompok status
+        # Pilihan 1: Bar chart rata-rata
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(x='Target', y=selected_feature, data=df, ax=ax, palette='viridis')
-        ax.set_title(f'Box Plot {selected_feature} vs. Target')
+        sns.barplot(x='Target', y=selected_feature, data=df, ax=ax, palette='viridis', errorbar='sd') # Menampilkan standar deviasi
+        ax.set_title(f'Rata-rata {selected_feature} per Status Siswa')
         ax.set_xlabel('Status Siswa (Target)')
-        ax.set_ylabel(selected_feature)
+        ax.set_ylabel(f'Rata-rata {selected_feature}')
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         st.pyplot(fig)
+        st.markdown("Bar chart ini menampilkan **rata-rata** dari fitur numerik untuk setiap status siswa.")
 
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.violinplot(x='Target', y=selected_feature, data=df, ax=ax, palette='plasma')
-        ax.set_title(f'Violin Plot {selected_feature} vs. Target')
-        ax.set_xlabel('Status Siswa (Target)')
-        ax.set_ylabel(selected_feature)
-        plt.xticks(rotation=45, ha='right')
+        # Pilihan 2: Histogram atau KDE plot (jika ingin melihat distribusi bentuk)
+        # Atau bisa juga menggunakan FacetGrid untuk histogram terpisah
+        st.subheader(f"Histogram '{selected_feature}' berdasarkan Status Siswa")
+        st.info(f"Visualisasi ini menunjukkan **distribusi** dari nilai '{selected_feature}' untuk setiap status siswa secara terpisah.")
+        g = sns.FacetGrid(df, col="Target", col_wrap=3, height=4, aspect=1.2)
+        g.map(sns.histplot, selected_feature, kde=True, bins=15, palette='viridis')
+        g.set_titles("Status: {col_name}")
+        g.set_axis_labels(selected_feature, "Jumlah Siswa")
         plt.tight_layout()
-        st.pyplot(fig)
+        st.pyplot(g)
+        st.markdown("Histogram ini menunjukkan **distribusi frekuensi** nilai fitur numerik untuk setiap status siswa.")
 
     else: # Categorical feature
         st.subheader(f"Distribusi '{selected_feature}' berdasarkan Status Siswa")
         st.info(f"Visualisasi ini menunjukkan proporsi kategori '{selected_feature}' (misalnya, jenis kelamin, beasiswa) untuk setiap status siswa (Dropout, Enrolled, Graduate).")
 
+        # Bar chart dengan hue untuk perbandingan antar status
         fig, ax = plt.subplots(figsize=(12, 7))
         # Use value_counts to get order for better visualization if many categories
         order_values = df[selected_feature].value_counts().index
-        if len(order_values) > 10: # Limit for readability
-            order_values = order_values[:10]
-            st.warning(f"Menampilkan top 10 kategori untuk '{selected_feature}' karena terlalu banyak kategori.")
+        if len(order_values) > 15: # Limit for readability, adjusted slightly
+            order_values = order_values[:15]
+            st.warning(f"Menampilkan top 15 kategori untuk '{selected_feature}' karena terlalu banyak kategori.")
 
         sns.countplot(x=selected_feature, hue='Target', data=df, ax=ax, order=order_values, palette='coolwarm')
-        ax.set_title(f'Count Plot {selected_feature} vs. Target')
+        ax.set_title(f'Jumlah Siswa berdasarkan {selected_feature} dan Status')
         ax.set_xlabel(selected_feature)
         ax.set_ylabel('Jumlah Siswa')
         plt.xticks(rotation=45, ha='right')
         plt.legend(title='Status Siswa')
         plt.tight_layout()
         st.pyplot(fig)
+        st.markdown("Bar chart ini menampilkan **jumlah siswa** untuk setiap kategori fitur, dipisahkan berdasarkan status siswa.")
+
+        # Pie chart untuk melihat proporsi status di dalam setiap kategori fitur (opsional, tergantung jumlah kategori)
+        # Jika kategori terlalu banyak, pie chart jadi tidak efektif
+        if df[selected_feature].nunique() <= 5: # Batasi pie chart hanya jika kategori sedikit
+            st.subheader(f"Proporsi Status Siswa dalam Setiap Kategori '{selected_feature}'")
+            st.info(f"Pie chart ini menampilkan **proporsi** siswa Dropout, Enrolled, dan Graduate untuk setiap kategori dari fitur '{selected_feature}'.")
+            
+            for category in df[selected_feature].unique():
+                subset_df = df[df[selected_feature] == category]
+                if not subset_df.empty:
+                    status_counts = subset_df['Target'].value_counts()
+                    fig, ax = plt.subplots(figsize=(6, 6))
+                    ax.pie(status_counts, labels=status_counts.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
+                    ax.set_title(f'Status Siswa untuk {selected_feature}: {category}')
+                    ax.axis('equal') # Ensures pie is drawn as a circle.
+                    st.pyplot(fig)
+                else:
+                    st.write(f"Tidak ada data untuk kategori '{category}' pada fitur '{selected_feature}'.")
+            st.markdown("Pie chart ini memberikan gambaran **persentase** dari setiap status siswa dalam setiap kategori fitur yang dipilih.")
+        else:
+            st.info(f"Pie chart tidak ditampilkan untuk '{selected_feature}' karena jumlah kategori terlalu banyak ({df[selected_feature].nunique()}). Bar chart lebih efektif.")
+
 
         # Show crosstab for categorical features
         st.subheader(f"Tabel Kontingensi '{selected_feature}' dan 'Target'")
         crosstab = pd.crosstab(df[selected_feature], df['Target'], normalize='index').style.format("{:.2%}")
         st.dataframe(crosstab)
-        st.markdown("Tabel di atas menunjukkan persentase setiap kategori dari fitur yang dipilih untuk setiap status siswa.")
+        st.markdown("Tabel di atas menunjukkan **persentase** setiap kategori dari fitur yang dipilih untuk setiap status siswa.")
 
     # --- Correlation Matrix (for numeric features vs. encoded target) ---
     st.markdown("---")
@@ -275,7 +305,7 @@ if df is not None:
             else:
                 top_values = value_counts.head(20)
                 sns.countplot(y=selected_feature, data=df[df[selected_feature].isin(top_values.index)], 
-                              order=top_values.index, ax=ax)
+                                  order=top_values.index, ax=ax)
                 ax.set_title(f"Top 20 {selected_feature}")
             
             ax.set_xlabel("Jumlah")
