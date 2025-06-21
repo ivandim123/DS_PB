@@ -1,595 +1,529 @@
+import os
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
 
-# PENTING: st.set_page_config() HARUS DIPANGGIL PERTAMA KALI
+# Set page configuration
 st.set_page_config(
-    page_title="Student Dropout Analysis Dashboard",
-    page_icon="📊",
-    layout="wide"
+    page_title="Dashboard Analisis Dropout Siswa",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-@st.cache_data
-def load_data():
-    """Load dataset dari folder submission"""
-    try:
-        df = pd.read_csv('submission/data.csv', low_memory=False)
-        return df
-    except FileNotFoundError:
-        st.error("❌ Dataset 'data.csv' tidak ditemukan di folder submission!")
-        return None
+# Set style
+sns.set_style("whitegrid")
+plt.style.use('seaborn-v0_8-whitegrid')
 
-def create_status_overview(df):
-    """Membuat overview status siswa"""
-    st.header("📈 Overview Status Siswa")
+# Dashboard title
+st.title("🎓 Dashboard Analisis Dropout Siswa")
+st.markdown("""
+Dashboard ini memberikan analisis komprehensif tentang faktor-faktor yang mempengaruhi dropout siswa.
+Visualisasi dirancang untuk memberikan insight yang mudah dipahami oleh berbagai kalangan.
+""")
+
+@st.cache_data
+def load_csv_from_path():
+    """Try to load CSV from various paths"""
+    script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
     
-    # Hitung distribusi status
-    status_counts = df['Status'].value_counts()
+    possible_paths = [
+        "data.csv",
+        os.path.join(script_dir, "data.csv"),
+        "./data.csv", 
+        "dataset/data.csv",
+        "data/data.csv",
+        os.path.join(script_dir, "dataset", "data.csv"),
+        os.path.join(script_dir, "data", "data.csv")
+    ]
+    
+    # Check for any CSV file in current directory
+    current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+    if current_dir_files:
+        for csv_file in current_dir_files:
+            possible_paths.insert(0, csv_file)
+    
+    # Check script directory for CSV files
+    try:
+        script_dir_files = [f for f in os.listdir(script_dir) if f.endswith('.csv')]
+        if script_dir_files:
+            for csv_file in script_dir_files:
+                possible_paths.insert(0, os.path.join(script_dir, csv_file))
+    except:
+        pass
+    
+    st.sidebar.write("**🔍 Mencari file CSV:**")
+    for path in possible_paths[:5]:
+        try:
+            if os.path.exists(path):
+                df = pd.read_csv(path)
+                st.sidebar.success(f"✅ Found: {path}")
+                return df, path
+            else:
+                st.sidebar.write(f"❌ {path}")
+        except Exception as e:
+            st.sidebar.write(f"❌ Error: {path}")
+            continue
+    
+    return None, None
+
+@st.cache_data
+def create_sample_data():
+    """Create comprehensive sample data for demonstration"""
+    np.random.seed(42)
+    n = 1000
+    
+    # Create more realistic sample data
+    ages = np.random.normal(20, 2, n).clip(17, 35).astype(int)
+    genders = np.random.choice(['Male', 'Female'], n, p=[0.45, 0.55])
+    
+    # Create correlated data for more realistic analysis
+    scholarship_prob = np.where(ages < 22, 0.4, 0.2)  # Younger students more likely to have scholarship
+    scholarships = np.random.binomial(1, scholarship_prob, n)
+    
+    # Grades correlated with scholarship and inversely with dropout probability
+    base_grade = 12 + scholarships * 2 + np.random.normal(0, 2, n)
+    grade_1st = base_grade.clip(0, 20)
+    grade_2nd = (base_grade + np.random.normal(0, 1, n)).clip(0, 20)
+    
+    # Dropout probability based on multiple factors
+    dropout_prob = 0.1 + 0.3 * (grade_1st < 10) + 0.2 * (scholarships == 0) + 0.1 * (ages > 25)
+    dropout_prob = dropout_prob.clip(0, 1)
+    
+    # Generate status based on probability
+    status_rand = np.random.random(n)
+    statuses = []
+    for i in range(n):
+        if status_rand[i] < dropout_prob[i]:
+            statuses.append('Dropout')
+        elif status_rand[i] < dropout_prob[i] + 0.4:
+            statuses.append('Enrolled')
+        else:
+            statuses.append('Graduate')
+    
+    data = {
+        'Student_ID': range(1, n+1),
+        'Age': ages,
+        'Gender': genders,
+        'Application_mode': np.random.choice([1, 2, 17, 18, 39, 42, 43], n),
+        'Fathers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
+        'Mothers_qualification': np.random.choice([1, 2, 3, 4, 5, 19, 34, 35], n),
+        'Tuition_fees_up_to_date': np.random.choice([0, 1], n, p=[0.15, 0.85]),
+        'Scholarship_holder': scholarships,
+        'Grade_1st_semester': grade_1st,
+        'Grade_2nd_semester': grade_2nd,
+        'Curricular_units_enrolled': np.random.randint(4, 8, n),
+        'Curricular_units_approved': np.random.randint(2, 8, n),
+        'Marital_status': np.random.choice(['Single', 'Married', 'Divorced'], n, p=[0.8, 0.15, 0.05]),
+        'Status': statuses
+    }
+    
+    return pd.DataFrame(data)
+
+def create_overview_metrics(df):
+    """Create overview metrics cards"""
     total_students = len(df)
+    dropout_count = len(df[df['Target'] == 'Dropout'])
+    enrolled_count = len(df[df['Target'] == 'Enrolled'])
+    graduate_count = len(df[df['Target'] == 'Graduate'])
     
-    # Metrics cards
-    col1, col2, col3, col4 = st.columns(4)
+    dropout_rate = (dropout_count / total_students) * 100
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        st.metric(
-            label="Total Siswa",
-            value=f"{total_students:,}",
-            delta=None
-        )
+        st.metric("👥 Total Siswa", f"{total_students:,}")
     
     with col2:
-        graduate_pct = (status_counts.get('Graduate', 0) / total_students) * 100
-        st.metric(
-            label="Graduate",
-            value=f"{status_counts.get('Graduate', 0):,}",
-            delta=f"{graduate_pct:.1f}%"
-        )
+        st.metric("❌ Dropout", f"{dropout_count:,}", 
+                  f"{dropout_rate:.1f}%")
     
     with col3:
-        enrolled_pct = (status_counts.get('Enrolled', 0) / total_students) * 100
-        st.metric(
-            label="Enrolled",
-            value=f"{status_counts.get('Enrolled', 0):,}",
-            delta=f"{enrolled_pct:.1f}%"
-        )
+        st.metric("📚 Enrolled", f"{enrolled_count:,}")
     
     with col4:
-        dropout_pct = (status_counts.get('Dropout', 0) / total_students) * 100
-        st.metric(
-            label="Dropout",
-            value=f"{status_counts.get('Dropout', 0):,}",
-            delta=f"{dropout_pct:.1f}%"
-        )
-
-def create_status_distribution_charts(df):
-    """Membuat chart distribusi status siswa"""
-    st.subheader("🎯 Distribusi Status Siswa")
+        st.metric("🎓 Graduate", f"{graduate_count:,}")
     
+    with col5:
+        retention_rate = ((total_students - dropout_count) / total_students) * 100
+        st.metric("📈 Retention Rate", f"{retention_rate:.1f}%")
+
+def create_status_distribution_pie(df):
+    """Create pie chart for status distribution"""
+    status_counts = df['Target'].value_counts()
+    
+    fig = px.pie(values=status_counts.values, 
+                 names=status_counts.index,
+                 title="Distribusi Status Siswa",
+                 color_discrete_map={
+                     'Dropout': '#ff6b6b',
+                     'Enrolled': '#4ecdc4', 
+                     'Graduate': '#45b7d1'
+                 })
+    
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.update_layout(showlegend=True, height=400)
+    
+    return fig
+
+def create_age_dropout_analysis(df):
+    """Create age vs dropout analysis"""
+    if 'Age' in df.columns:
+        # Age groups
+        df['Age_Group'] = pd.cut(df['Age'], 
+                                 bins=[16, 20, 23, 26, 100], 
+                                 labels=['17-20', '21-23', '24-26', '27+'])
+        
+        age_status = df.groupby(['Age_Group', 'Target']).size().unstack(fill_value=0)
+        age_status_pct = age_status.div(age_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(age_status_pct.reset_index(), 
+                     x='Age_Group', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Distribusi Status Siswa berdasarkan Kelompok Usia (%)",
+                     labels={'value': 'Persentase (%)', 'Age_Group': 'Kelompok Usia'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+def create_scholarship_analysis(df):
+    """Create scholarship vs dropout analysis"""
+    if 'Scholarship_holder' in df.columns:
+        scholarship_map = {0: 'Tidak Ada Beasiswa', 1: 'Ada Beasiswa'}
+        df['Scholarship_Status'] = df['Scholarship_holder'].map(scholarship_map)
+        
+        scholarship_status = df.groupby(['Scholarship_Status', 'Target']).size().unstack(fill_value=0)
+        scholarship_status_pct = scholarship_status.div(scholarship_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(scholarship_status_pct.reset_index(), 
+                     x='Scholarship_Status', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Pengaruh Beasiswa terhadap Status Siswa (%)",
+                     labels={'value': 'Persentase (%)', 'Scholarship_Status': 'Status Beasiswa'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+def create_gender_analysis(df):
+    """Create gender vs dropout analysis"""
+    if 'Gender' in df.columns:
+        gender_status = df.groupby(['Gender', 'Target']).size().unstack(fill_value=0)
+        gender_status_pct = gender_status.div(gender_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(gender_status_pct.reset_index(), 
+                     x='Gender', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Distribusi Status Siswa berdasarkan Gender (%)",
+                     labels={'value': 'Persentase (%)', 'Gender': 'Jenis Kelamin'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+def create_grades_analysis(df):
+    """Create grades analysis"""
+    grade_cols = [col for col in df.columns if 'Grade' in col or 'grade' in col]
+    
+    if grade_cols:
+        # Use first available grade column
+        grade_col = grade_cols[0]
+        
+        # Create grade categories
+        df['Grade_Category'] = pd.cut(df[grade_col], 
+                                     bins=[0, 10, 14, 17, 20], 
+                                     labels=['Rendah (0-10)', 'Sedang (10-14)', 
+                                             'Baik (14-17)', 'Sangat Baik (17-20)'])
+        
+        grade_status = df.groupby(['Grade_Category', 'Target']).size().unstack(fill_value=0)
+        grade_status_pct = grade_status.div(grade_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(grade_status_pct.reset_index(), 
+                     x='Grade_Category', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title=f"Pengaruh Prestasi Akademik terhadap Status Siswa (%)",
+                     labels={'value': 'Persentase (%)', 'Grade_Category': 'Kategori Nilai'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+def create_tuition_analysis(df):
+    """Create tuition fees analysis"""
+    if 'Tuition_fees_up_to_date' in df.columns:
+        tuition_map = {0: 'Tidak Up-to-date', 1: 'Up-to-date'}
+        df['Tuition_Status'] = df['Tuition_fees_up_to_date'].map(tuition_map)
+        
+        tuition_status = df.groupby(['Tuition_Status', 'Target']).size().unstack(fill_value=0)
+        tuition_status_pct = tuition_status.div(tuition_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(tuition_status_pct.reset_index(), 
+                     x='Tuition_Status', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Pengaruh Status Pembayaran SPP terhadap Dropout (%)",
+                     labels={'value': 'Persentase (%)', 'Tuition_Status': 'Status Pembayaran SPP'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+def create_parents_qualification_analysis(df):
+    """Create parents qualification analysis"""
+    # Check for specific parent qualification columns
+    if 'Fathers_qualification' in df.columns or 'Mothers_qualification' in df.columns:
+        # Prioritize Mothers_qualification if available, otherwise Fathers_qualification
+        if 'Mothers_qualification' in df.columns:
+            parent_col = 'Mothers_qualification'
+        elif 'Fathers_qualification' in df.columns:
+            parent_col = 'Fathers_qualification'
+        else:
+            return None # Should not happen with the outer if condition
+        
+        # Map qualification codes to meaningful labels (you may need to adjust based on your data)
+        qual_map = {1: 'Dasar', 2: 'Menengah', 3: 'Menengah Atas', 4: 'Diploma', 5: 'Sarjana', 
+                    19: 'Magister', 34: 'Doktor', 35: 'Lainnya'}
+        
+        # Apply mapping, keep original value if not in map
+        df['Parent_Qualification'] = df[parent_col].map(qual_map).fillna('Lainnya')
+        
+        qual_status = df.groupby(['Parent_Qualification', 'Target']).size().unstack(fill_value=0)
+        qual_status_pct = qual_status.div(qual_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(qual_status_pct.reset_index(), 
+                     x='Parent_Qualification', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Pengaruh Pendidikan Orang Tua terhadap Status Siswa (%)",
+                     labels={'value': 'Persentase (%)', 'Parent_Qualification': 'Tingkat Pendidikan Orang Tua'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+        
+        fig.update_layout(barmode='stack', height=400)
+        return fig
+    return None
+
+
+def create_insights_summary(df):
+    """Create insights summary"""
+    insights = []
+    
+    # Calculate dropout rate
+    dropout_rate = (len(df[df['Target'] == 'Dropout']) / len(df)) * 100
+    insights.append(f"📊 **Tingkat Dropout**: {dropout_rate:.1f}% dari total siswa")
+    
+    # Age analysis
+    if 'Age' in df.columns:
+        dropout_by_age = df[df['Target'] == 'Dropout']['Age'].mean()
+        overall_age = df['Age'].mean()
+        if dropout_by_age > overall_age:
+            insights.append(f"👴 Siswa yang dropout cenderung **lebih tua** (rata-rata {dropout_by_age:.1f} tahun vs {overall_age:.1f} tahun)")
+        else:
+            insights.append(f"👶 Siswa yang dropout cenderung **lebih muda** (rata-rata {dropout_by_age:.1f} tahun vs {overall_age:.1f} tahun)")
+    
+    # Scholarship analysis
+    if 'Scholarship_holder' in df.columns:
+        dropout_with_scholarship = df[(df['Target'] == 'Dropout') & (df['Scholarship_holder'] == 1)].shape[0]
+        total_with_scholarship = df[df['Scholarship_holder'] == 1].shape[0]
+        dropout_without_scholarship = df[(df['Target'] == 'Dropout') & (df['Scholarship_holder'] == 0)].shape[0]
+        total_without_scholarship = df[df['Scholarship_holder'] == 0].shape[0]
+        
+        if total_with_scholarship > 0 and total_without_scholarship > 0:
+            dropout_rate_with = (dropout_with_scholarship / total_with_scholarship) * 100
+            dropout_rate_without = (dropout_without_scholarship / total_without_scholarship) * 100
+            
+            if dropout_rate_with < dropout_rate_without:
+                insights.append(f"🎓 **Beasiswa efektif**: Dropout rate dengan beasiswa ({dropout_rate_with:.1f}%) lebih rendah daripada tanpa beasiswa ({dropout_rate_without:.1f}%)")
+            else:
+                insights.append(f"⚠️ **Beasiswa perlu evaluasi**: Dropout rate dengan beasiswa ({dropout_rate_with:.1f}%) tidak lebih rendah dari tanpa beasiswa ({dropout_rate_without:.1f}%)")
+    
+    # Grade analysis
+    grade_cols = [col for col in df.columns if 'Grade' in col or 'grade' in col]
+    if grade_cols:
+        grade_col = grade_cols[0]
+        avg_grade_dropout = df[df['Target'] == 'Dropout'][grade_col].mean()
+        avg_grade_graduate = df[df['Target'] == 'Graduate'][grade_col].mean()
+        
+        insights.append(f"📚 **Prestasi akademik berpengaruh**: Rata-rata nilai graduate ({avg_grade_graduate:.1f}) lebih tinggi dari dropout ({avg_grade_dropout:.1f})")
+    
+    return insights
+
+# Main application logic
+st.sidebar.header("📁 Data Source")
+
+# Load data
+df, file_path = load_csv_from_path()
+
+if df is not None:
+    st.sidebar.success(f"✅ Data loaded: {file_path}")
+else:
+    st.sidebar.warning("⚠️ No CSV file found automatically")
+    uploaded_file = st.sidebar.file_uploader("Upload CSV file", type="csv")
+    
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file)
+            st.sidebar.success("✅ Data loaded from upload")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error: {e}")
+            df = None
+    else:
+        st.sidebar.info("📊 Using sample data for demo")
+        df = create_sample_data()
+
+# Process data
+if df is not None:
+    # Handle Status/Target column
+    if 'Status' in df.columns:
+        df = df.rename(columns={'Status': 'Target'})
+        st.sidebar.success("✅ Column 'Status' renamed to 'Target'")
+    elif 'Target' not in df.columns:
+        st.error("❌ Column 'Status' or 'Target' not found in dataset. Please ensure your data has a 'Status' or 'Target' column indicating student outcome.")
+        st.stop()
+
+    # Display dataset info
+    st.sidebar.subheader("📊 Dataset Info")
+    st.sidebar.write(f"Rows: {df.shape[0]:,}")
+    st.sidebar.write(f"Columns: {df.shape[1]}")
+    
+    # Main dashboard content
+    st.markdown("---")
+    
+    # Overview Metrics
+    st.header("📈 Overview Metrics")
+    create_overview_metrics(df)
+    
+    st.markdown("---")
+    
+    # Main visualizations
     col1, col2 = st.columns(2)
     
     with col1:
-        # Pie Chart
-        status_counts = df['Status'].value_counts()
-        colors = ['#2E8B57', '#4682B4', '#DC143C']  # Green, Blue, Red
-        
-        fig_pie = go.Figure(data=[go.Pie(
-            labels=status_counts.index,
-            values=status_counts.values,
-            hole=0.4,
-            marker_colors=colors,
-            textinfo='label+percent',
-            textfont_size=12
-        )])
-        
-        fig_pie.update_layout(
-            title="Distribusi Status Siswa",
-            title_x=0.5,
-            height=400
-        )
-        
+        st.subheader("📊 Distribusi Status Siswa")
+        fig_pie = create_status_distribution_pie(df)
         st.plotly_chart(fig_pie, use_container_width=True)
     
     with col2:
-        # Bar Chart
-        fig_bar = px.bar(
-            x=status_counts.index,
-            y=status_counts.values,
-            color=status_counts.index,
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Jumlah Siswa per Status"
-        )
-        
-        fig_bar.update_layout(
-            xaxis_title="Status",
-            yaxis_title="Jumlah Siswa",
-            showlegend=False,
-            height=400
-        )
-        
-        # Tambahkan angka di atas bar
-        fig_bar.update_traces(texttemplate='%{y}', textposition='outside')
-        
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-def create_demographic_analysis(df):
-    """Analisis faktor demografis"""
-    st.header("👥 Analisis Faktor Demografis")
+        st.subheader("👥 Analisis Berdasarkan Usia")
+        fig_age = create_age_dropout_analysis(df)
+        if fig_age:
+            st.plotly_chart(fig_age, use_container_width=True)
+        else:
+            st.info("Data usia tidak tersedia untuk analisis.")
     
-    # Age Analysis
-    st.subheader("📊 Analisis Usia")
-    col1, col2 = st.columns(2)
+    st.markdown("---")
     
-    with col1:
-        # Age distribution by status
-        fig_age = px.histogram(
-            df, 
-            x='Age_at_enrollment', 
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Distribusi Usia Berdasarkan Status",
-            nbins=20
-        )
-        fig_age.update_layout(xaxis_title="Usia saat Pendaftaran", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_age, use_container_width=True)
-    
-    with col2:
-        # Average age by status
-        avg_age = df.groupby('Status')['Age_at_enrollment'].mean().reset_index()
-        fig_avg_age = px.bar(
-            avg_age,
-            x='Status',
-            y='Age_at_enrollment',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Rata-rata Usia per Status"
-        )
-        fig_avg_age.update_layout(
-            xaxis_title="Status",
-            yaxis_title="Rata-rata Usia",
-            showlegend=False
-        )
-        fig_avg_age.update_traces(texttemplate='%{y:.1f}', textposition='outside')
-        st.plotly_chart(fig_avg_age, use_container_width=True)
-    
-    # Gender Analysis
-    st.subheader("🚻 Analisis Gender")
-    col1, col2 = st.columns(2)
-    
-    # Map gender values
-    df['Gender_Label'] = df['Gender'].map({1: 'Male', 0: 'Female'})
-    
-    with col1:
-        # Gender distribution by status
-        gender_status = df.groupby(['Gender_Label', 'Status']).size().reset_index(name='Count')
-        fig_gender = px.bar(
-            gender_status,
-            x='Gender_Label',
-            y='Count',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Distribusi Gender Berdasarkan Status"
-        )
-        fig_gender.update_layout(xaxis_title="Gender", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_gender, use_container_width=True)
-    
-    with col2:
-        # Dropout rate by gender
-        dropout_by_gender = df.groupby('Gender_Label').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_dropout_gender = px.bar(
-            dropout_by_gender,
-            x='Gender_Label',
-            y='Dropout_Rate',
-            color='Gender_Label',
-            color_discrete_map={'Male': '#4169E1', 'Female': '#FF69B4'},
-            title="Tingkat Dropout per Gender (%)"
-        )
-        fig_dropout_gender.update_layout(
-            xaxis_title="Gender",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_dropout_gender.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_dropout_gender, use_container_width=True)
-
-def create_academic_performance_analysis(df):
-    """Analisis performa akademik"""
-    st.header("🎓 Analisis Performa Akademik")
-    
-    # Admission Grade Analysis
-    st.subheader("📝 Analisis Nilai Penerimaan")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Average admission grade by status
-        avg_admission = df.groupby('Status')['Admission_grade'].mean().reset_index()
-        fig_admission = px.bar(
-            avg_admission,
-            x='Status',
-            y='Admission_grade',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Rata-rata Nilai Penerimaan per Status"
-        )
-        fig_admission.update_layout(
-            xaxis_title="Status",
-            yaxis_title="Rata-rata Nilai Penerimaan",
-            showlegend=False
-        )
-        fig_admission.update_traces(texttemplate='%{y:.1f}', textposition='outside')
-        st.plotly_chart(fig_admission, use_container_width=True)
-    
-    with col2:
-        # Admission grade distribution
-        fig_admission_dist = px.histogram(
-            df,
-            x='Admission_grade',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Distribusi Nilai Penerimaan",
-            nbins=30
-        )
-        fig_admission_dist.update_layout(xaxis_title="Nilai Penerimaan", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_admission_dist, use_container_width=True)
-    
-    # Semester Performance
-    st.subheader("📚 Performa Semester")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # 1st semester grades
-        avg_sem1 = df.groupby('Status')['Curricular_units_1st_sem_grade'].mean().reset_index()
-        fig_sem1 = px.bar(
-            avg_sem1,
-            x='Status',
-            y='Curricular_units_1st_sem_grade',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Rata-rata Nilai Semester 1"
-        )
-        fig_sem1.update_layout(
-            xaxis_title="Status",
-            yaxis_title="Rata-rata Nilai Semester 1",
-            showlegend=False
-        )
-        fig_sem1.update_traces(texttemplate='%{y:.1f}', textposition='outside')
-        st.plotly_chart(fig_sem1, use_container_width=True)
-    
-    with col2:
-        # 2nd semester grades
-        avg_sem2 = df.groupby('Status')['Curricular_units_2nd_sem_grade'].mean().reset_index()
-        fig_sem2 = px.bar(
-            avg_sem2,
-            x='Status',
-            y='Curricular_units_2nd_sem_grade',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Rata-rata Nilai Semester 2"
-        )
-        fig_sem2.update_layout(
-            xaxis_title="Status",
-            yaxis_title="Rata-rata Nilai Semester 2",
-            showlegend=False
-        )
-        fig_sem2.update_traces(texttemplate='%{y:.1f}', textposition='outside')
-        st.plotly_chart(fig_sem2, use_container_width=True)
-
-def create_financial_analysis(df):
-    """Analisis faktor finansial"""
-    st.header("💰 Analisis Faktor Finansial")
-    
-    col1, col2 = st.columns(2)
-    
-    # Map financial indicators
-    df['Scholarship_Label'] = df['Scholarship_holder'].map({1: 'Yes', 0: 'No'})
-    df['Debtor_Label'] = df['Debtor'].map({1: 'Yes', 0: 'No'})
-    df['Tuition_Label'] = df['Tuition_fees_up_to_date'].map({1: 'Yes', 0: 'No'})
-    
-    with col1:
-        # Scholarship analysis
-        scholarship_status = df.groupby(['Scholarship_Label', 'Status']).size().reset_index(name='Count')
-        fig_scholarship = px.bar(
-            scholarship_status,
-            x='Scholarship_Label',
-            y='Count',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Status Siswa Berdasarkan Beasiswa"
-        )
-        fig_scholarship.update_layout(xaxis_title="Penerima Beasiswa", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_scholarship, use_container_width=True)
-        
-        # Dropout rate by scholarship
-        dropout_by_scholarship = df.groupby('Scholarship_Label').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_dropout_scholarship = px.bar(
-            dropout_by_scholarship,
-            x='Scholarship_Label',
-            y='Dropout_Rate',
-            color='Scholarship_Label',
-            color_discrete_map={'Yes': '#32CD32', 'No': '#FF6347'},
-            title="Tingkat Dropout: Penerima vs Non-Penerima Beasiswa"
-        )
-        fig_dropout_scholarship.update_layout(
-            xaxis_title="Penerima Beasiswa",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_dropout_scholarship.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_dropout_scholarship, use_container_width=True)
-    
-    with col2:
-        # Tuition fees analysis
-        tuition_status = df.groupby(['Tuition_Label', 'Status']).size().reset_index(name='Count')
-        fig_tuition = px.bar(
-            tuition_status,
-            x='Tuition_Label',
-            y='Count',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Status Siswa Berdasarkan Pembayaran SPP"
-        )
-        fig_tuition.update_layout(xaxis_title="SPP Up to Date", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_tuition, use_container_width=True)
-        
-        # Dropout rate by tuition payment
-        dropout_by_tuition = df.groupby('Tuition_Label').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_dropout_tuition = px.bar(
-            dropout_by_tuition,
-            x='Tuition_Label',
-            y='Dropout_Rate',
-            color='Tuition_Label',
-            color_discrete_map={'Yes': '#32CD32', 'No': '#FF6347'},
-            title="Tingkat Dropout Berdasarkan Status Pembayaran SPP"
-        )
-        fig_dropout_tuition.update_layout(
-            xaxis_title="SPP Up to Date",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_dropout_tuition.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_dropout_tuition, use_container_width=True)
-
-def create_attendance_analysis(df):
-    """Analisis pola kehadiran"""
-    st.header("🕐 Analisis Pola Kehadiran")
-    
-    # --- Add this line to debug ---
-    st.write("Columns in DataFrame:", df.columns.tolist())
-    # --- End debug line ---
-
-    # Map attendance pattern
-    df['Attendance_Label'] = df['Daytime/evening_attendance'].map({1: 'Daytime', 0: 'Evening'})
-    # ... rest of your code
-
-def create_parents_background_analysis(df):
-    """Analisis latar belakang orang tua"""
-    st.header("👨‍👩‍👧‍👦 Analisis Latar Belakang Orang Tua")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Mother's qualification vs dropout rate
-        st.subheader("📚 Kualifikasi Ibu")
-        
-        # Group mother's qualification into ranges for better visualization
-        df['Mother_Qual_Group'] = pd.cut(df["Mother's_qualification"], 
-                                       bins=[0, 10, 20, 30, 44], 
-                                       labels=['1-10', '11-20', '21-30', '31-44'])
-        
-        dropout_by_mother = df.groupby('Mother_Qual_Group').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_mother = px.bar(
-            dropout_by_mother,
-            x='Mother_Qual_Group',
-            y='Dropout_Rate',
-            color='Mother_Qual_Group',
-            title="Tingkat Dropout Berdasarkan Kualifikasi Ibu"
-        )
-        fig_mother.update_layout(
-            xaxis_title="Tingkat Kualifikasi Ibu",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_mother.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_mother, use_container_width=True)
-    
-    with col2:
-        # Father's qualification vs dropout rate
-        st.subheader("📚 Kualifikasi Ayah")
-        
-        # Group father's qualification into ranges
-        df['Father_Qual_Group'] = pd.cut(df["Father's_qualification"], 
-                                       bins=[0, 10, 20, 30, 44], 
-                                       labels=['1-10', '11-20', '21-30', '31-44'])
-        
-        dropout_by_father = df.groupby('Father_Qual_Group').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_father = px.bar(
-            dropout_by_father,
-            x='Father_Qual_Group',
-            y='Dropout_Rate',
-            color='Father_Qual_Group',
-            title="Tingkat Dropout Berdasarkan Kualifikasi Ayah"
-        )
-        fig_father.update_layout(
-            xaxis_title="Tingkat Kualifikasi Ayah",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_father.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_father, use_container_width=True)
-
-def create_key_insights(df):
-    """Membuat rangkuman insight kunci"""
-    st.header("🔍 Insight Kunci")
-    
-    # Calculate key statistics
-    total_students = len(df)
-    dropout_rate = (df['Status'] == 'Dropout').sum() / total_students * 100
-    
-    # Age insights
-    avg_age_dropout = df[df['Status'] == 'Dropout']['Age_at_enrollment'].mean()
-    avg_age_graduate = df[df['Status'] == 'Graduate']['Age_at_enrollment'].mean()
-    
-    # Academic insights
-    avg_admission_dropout = df[df['Status'] == 'Dropout']['Admission_grade'].mean()
-    avg_admission_graduate = df[df['Status'] == 'Graduate']['Admission_grade'].mean()
-    
-    # Financial insights
-    scholarship_dropout_rate = (df[df['Scholarship_holder'] == 1]['Status'] == 'Dropout').mean() * 100
-    no_scholarship_dropout_rate = (df[df['Scholarship_holder'] == 0]['Status'] == 'Dropout').mean() * 100
-    
-    # Create insights cards
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.info(f"""
-        **📊 Statistik Umum**
-        - Tingkat dropout keseluruhan: **{dropout_rate:.1f}%**
-        - Rata-rata usia dropout: **{avg_age_dropout:.1f} tahun**
-        - Rata-rata usia graduate: **{avg_age_graduate:.1f} tahun**
-        """)
-    
-    with col2:
-        st.success(f"""
-        **🎓 Performa Akademik**
-        - Nilai penerimaan rata-rata dropout: **{avg_admission_dropout:.1f}**
-        - Nilai penerimaan rata-rata graduate: **{avg_admission_graduate:.1f}**
-        - Selisih: **{avg_admission_graduate - avg_admission_dropout:.1f} poin**
-        """)
+    # Additional analysis
+    col3, col4 = st.columns(2)
     
     with col3:
-        st.warning(f"""
-        **💰 Faktor Finansial**
-        - Dropout rate dengan beasiswa: **{scholarship_dropout_rate:.1f}%**
-        - Dropout rate tanpa beasiswa: **{no_scholarship_dropout_rate:.1f}%**
-        - Selisih: **{no_scholarship_dropout_rate - scholarship_dropout_rate:.1f}%**
-        """)
+        st.subheader("🎓 Pengaruh Beasiswa")
+        fig_scholarship = create_scholarship_analysis(df)
+        if fig_scholarship:
+            st.plotly_chart(fig_scholarship, use_container_width=True)
+        else:
+            st.info("Data beasiswa tidak tersedia untuk analisis.")
     
-    # Key recommendations
-    st.subheader("💡 Rekomendasi")
+    with col4:
+        st.subheader("👫 Analisis Gender")
+        fig_gender = create_gender_analysis(df)
+        if fig_gender:
+            st.plotly_chart(fig_gender, use_container_width=True)
+        else:
+            st.info("Data gender tidak tersedia untuk analisis.")
+    
+    st.markdown("---")
+    
+    # Academic and financial factors
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        st.subheader("📚 Prestasi Akademik")
+        fig_grades = create_grades_analysis(df)
+        if fig_grades:
+            st.plotly_chart(fig_grades, use_container_width=True)
+        else:
+            st.info("Data nilai tidak tersedia untuk analisis.")
+    
+    with col6:
+        st.subheader("💰 Status Pembayaran SPP")
+        fig_tuition = create_tuition_analysis(df)
+        if fig_tuition:
+            st.plotly_chart(fig_tuition, use_container_width=True)
+        else:
+            st.info("Data pembayaran SPP tidak tersedia untuk analisis.")
+    
+    st.markdown("---")
+    
+    # Parents education
+    st.subheader("👨‍👩‍👧‍👦 Pendidikan Orang Tua")
+    fig_parents = create_parents_qualification_analysis(df)
+    if fig_parents:
+        st.plotly_chart(fig_parents, use_container_width=True)
+    else:
+        st.info("Data pendidikan orang tua tidak tersedia untuk analisis.")
+    
+    st.markdown("---")
+    
+    # Key Insights
+    st.header("💡 Key Insights & Rekomendasi")
+    insights = create_insights_summary(df)
+    
+    for insight in insights:
+        st.markdown(insight)
+    
+    st.markdown("### 🎯 Rekomendasi Aksi:")
     st.markdown("""
-    Berdasarkan analisis data, berikut adalah rekomendasi untuk mengurangi tingkat dropout:
-    
-    1. **🎯 Fokus pada Siswa Berisiko Tinggi**: Siswa dengan nilai penerimaan rendah dan usia yang lebih tua memerlukan perhatian khusus
-    
-    2. **💸 Program Bantuan Finansial**: Tingkatkan program beasiswa dan bantuan keuangan, karena terbukti efektif mengurangi dropout
-    
-    3. **📚 Dukungan Akademik**: Implementasikan program mentoring dan tutoring untuk siswa dengan performa semester rendah
-    
-    4. **🕐 Fleksibilitas Jadwal**: Pertimbangkan program yang lebih fleksibel untuk siswa malam hari yang mungkin bekerja
-    
-    5. **👨‍👩‍👧‍👦 Keterlibatan Keluarga**: Program yang melibatkan orang tua, terutama untuk siswa dari keluarga dengan latar belakang pendidikan rendah
+    1. **🎓 Program Dukungan Akademik**: Fokus pada siswa dengan nilai rendah semester pertama
+    2. **💰 Bantuan Keuangan**: Perluas program beasiswa untuk siswa berisiko tinggi
+    3. **👥 Mentoring Program**: Buat program pendampingan khusus berdasarkan profil risiko
+    4. **📊 Early Warning System**: Implementasikan sistem deteksi dini berdasarkan faktor-faktor kunci
+    5. **🏫 Dukungan Keluarga**: Program edukasi untuk orang tua tentang pentingnya dukungan akademik
     """)
+    
+    # Data preview section
+    if st.checkbox("📋 Tampilkan Preview Data"):
+        st.subheader("Data Preview")
+        st.dataframe(df.head(100))
 
-# Main Dashboard
-def main():
-    st.title("📊 Dashboard Analisis Student Dropout")
-    st.markdown("*Analisis komprehensif faktor-faktor yang mempengaruhi tingkat dropout siswa*")
-    st.markdown("---")
-    
-    # Load data
-    df = load_data()
-    if df is None:
-        st.stop()
-    
-    # Sidebar for navigation
-    st.sidebar.header("🧭 Navigasi Dashboard")
-    analysis_option = st.sidebar.selectbox(
-        "Pilih Analisis:",
-        [
-            "Overview Status Siswa",
-            "Analisis Demografis",
-            "Performa Akademik", 
-            "Faktor Finansial",
-            "Pola Kehadiran",
-            "Latar Belakang Orang Tua",
-            "Insight Kunci"
-        ]
-    )
-    
-    # Display selected analysis
-    if analysis_option == "Overview Status Siswa":
-        create_status_overview(df)
-        create_status_distribution_charts(df)
-        
-    elif analysis_option == "Analisis Demografis":
-        create_demographic_analysis(df)
-        
-    elif analysis_option == "Performa Akademik":
-        create_academic_performance_analysis(df)
-        
-    elif analysis_option == "Faktor Finansial":
-        create_financial_analysis(df)
-        
-    elif analysis_option == "Pola Kehadiran":
-        create_attendance_analysis(df)
-        
-    elif analysis_option == "Latar Belakang Orang Tua":
-        create_parents_background_analysis(df)
-        
-    elif analysis_option == "Insight Kunci":
-        create_key_insights(df)
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("*Dashboard Student Dropout Analysis - Memberikan insight mendalam untuk pengambilan keputusan*")
-
-if __name__ == "__main__":
-    main()
+else:
+    st.error("❌ Cannot load data. Please ensure CSV file is available or upload one.")
+    st.markdown("""
+    **Troubleshooting:**
+    1. Ensure CSV file is in the same directory as the script.
+    2. Check file name (case-sensitive) and make sure it's `data.csv`.
+    3. Make sure the CSV file is not open in another application.
+    4. Try uploading the file using the sidebar uploader.
+    5. Ensure your CSV has a column named `Status` or `Target` to indicate student outcome.
+    """)
