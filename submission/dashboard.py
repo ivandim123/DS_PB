@@ -72,8 +72,7 @@ def load_csv_from_path():
         except Exception as e:
             st.sidebar.write(f"❌ Error: {path}")
             continue
-    if 'Age' not in df.columns and 'Age_at_enrollment' in df.columns:
-    df['Age'] = df['Age_at_enrollment']
+
     return None, None
 
 @st.cache_data
