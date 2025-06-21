@@ -34,7 +34,7 @@ def load_csv_from_path():
     possible_paths = [
         "data.csv",
         os.path.join(script_dir, "data.csv"),
-        "./data.csv",
+        "./data.csv", 
         "dataset/data.csv",
         "data/data.csv",
         os.path.join(script_dir, "dataset", "data.csv"),
@@ -42,10 +42,13 @@ def load_csv_from_path():
     ]
     
     # Check for any CSV file in current directory
-    current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
-    if current_dir_files:
-        for csv_file in current_dir_files:
-            possible_paths.insert(0, csv_file)
+    try:
+        current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
+        if current_dir_files:
+            for csv_file in current_dir_files:
+                possible_paths.insert(0, csv_file)
+    except:
+        pass
     
     # Check script directory for CSV files
     try:
@@ -119,8 +122,7 @@ def create_sample_data():
         'Curricular_units_enrolled': np.random.randint(4, 8, n),
         'Curricular_units_approved': np.random.randint(2, 8, n),
         'Marital_status': np.random.choice(['Single', 'Married', 'Divorced'], n, p=[0.8, 0.15, 0.05]),
-        'Status': statuses,
-        'Daytime/evening_attendance': np.random.choice([0, 1], n) # Added for the attendance analysis that might be intended
+        'Status': statuses
     }
     
     return pd.DataFrame(data)
@@ -140,8 +142,8 @@ def create_overview_metrics(df):
         st.metric("👥 Total Siswa", f"{total_students:,}")
     
     with col2:
-        st.metric("❌ Dropout", f"{dropout_count:,}",
-                  f"{dropout_rate:.1f}%")
+        st.metric("❌ Dropout", f"{dropout_count:,}", 
+                 f"{dropout_rate:.1f}%")
     
     with col3:
         st.metric("📚 Enrolled", f"{enrolled_count:,}")
@@ -157,12 +159,12 @@ def create_status_distribution_pie(df):
     """Create pie chart for status distribution"""
     status_counts = df['Target'].value_counts()
     
-    fig = px.pie(values=status_counts.values,
+    fig = px.pie(values=status_counts.values, 
                  names=status_counts.index,
                  title="Distribusi Status Siswa",
                  color_discrete_map={
                      'Dropout': '#ff6b6b',
-                     'Enrolled': '#4ecdc4',
+                     'Enrolled': '#4ecdc4', 
                      'Graduate': '#45b7d1'
                  })
     
@@ -173,22 +175,25 @@ def create_status_distribution_pie(df):
 
 def create_age_dropout_analysis(df):
     """Create age vs dropout analysis"""
+    if 'Age' not in df.columns:
+        return None
+        
     # Age groups
-    df['Age_Group'] = pd.cut(df['Age'],
-                             bins=[16, 20, 23, 26, 100],
-                             labels=['17-20', '21-23', '24-26', '27+'])
+    df['Age_Group'] = pd.cut(df['Age'], 
+                            bins=[16, 20, 23, 26, 100], 
+                            labels=['17-20', '21-23', '24-26', '27+'])
     
     age_status = df.groupby(['Age_Group', 'Target']).size().unstack(fill_value=0)
     age_status_pct = age_status.div(age_status.sum(axis=1), axis=0) * 100
     
-    fig = px.bar(age_status_pct.reset_index(),
-                 x='Age_Group',
+    fig = px.bar(age_status_pct.reset_index(), 
+                 x='Age_Group', 
                  y=['Dropout', 'Enrolled', 'Graduate'],
                  title="Distribusi Status Siswa berdasarkan Kelompok Usia (%)",
                  labels={'value': 'Persentase (%)', 'Age_Group': 'Kelompok Usia'},
                  color_discrete_map={
                      'Dropout': '#ff6b6b',
-                     'Enrolled': '#4ecdc4',
+                     'Enrolled': '#4ecdc4', 
                      'Graduate': '#45b7d1'
                  })
     
@@ -204,14 +209,14 @@ def create_scholarship_analysis(df):
         scholarship_status = df.groupby(['Scholarship_Status', 'Target']).size().unstack(fill_value=0)
         scholarship_status_pct = scholarship_status.div(scholarship_status.sum(axis=1), axis=0) * 100
         
-        fig = px.bar(scholarship_status_pct.reset_index(),
-                     x='Scholarship_Status',
+        fig = px.bar(scholarship_status_pct.reset_index(), 
+                     x='Scholarship_Status', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
                      title="Pengaruh Beasiswa terhadap Status Siswa (%)",
                      labels={'value': 'Persentase (%)', 'Scholarship_Status': 'Status Beasiswa'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
@@ -225,14 +230,14 @@ def create_gender_analysis(df):
         gender_status = df.groupby(['Gender', 'Target']).size().unstack(fill_value=0)
         gender_status_pct = gender_status.div(gender_status.sum(axis=1), axis=0) * 100
         
-        fig = px.bar(gender_status_pct.reset_index(),
-                     x='Gender',
+        fig = px.bar(gender_status_pct.reset_index(), 
+                     x='Gender', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
                      title="Distribusi Status Siswa berdasarkan Gender (%)",
                      labels={'value': 'Persentase (%)', 'Gender': 'Jenis Kelamin'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
@@ -249,22 +254,22 @@ def create_grades_analysis(df):
         grade_col = grade_cols[0]
         
         # Create grade categories
-        df['Grade_Category'] = pd.cut(df[grade_col],
-                                      bins=[0, 10, 14, 17, 20],
-                                      labels=['Rendah (0-10)', 'Sedang (10-14)',
-                                              'Baik (14-17)', 'Sangat Baik (17-20)'])
+        df['Grade_Category'] = pd.cut(df[grade_col], 
+                                     bins=[0, 10, 14, 17, 20], 
+                                     labels=['Rendah (0-10)', 'Sedang (10-14)', 
+                                            'Baik (14-17)', 'Sangat Baik (17-20)'])
         
         grade_status = df.groupby(['Grade_Category', 'Target']).size().unstack(fill_value=0)
         grade_status_pct = grade_status.div(grade_status.sum(axis=1), axis=0) * 100
         
-        fig = px.bar(grade_status_pct.reset_index(),
-                     x='Grade_Category',
+        fig = px.bar(grade_status_pct.reset_index(), 
+                     x='Grade_Category', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
                      title=f"Pengaruh Prestasi Akademik terhadap Status Siswa (%)",
                      labels={'value': 'Persentase (%)', 'Grade_Category': 'Kategori Nilai'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
@@ -281,14 +286,14 @@ def create_tuition_analysis(df):
         tuition_status = df.groupby(['Tuition_Status', 'Target']).size().unstack(fill_value=0)
         tuition_status_pct = tuition_status.div(tuition_status.sum(axis=1), axis=0) * 100
         
-        fig = px.bar(tuition_status_pct.reset_index(),
-                     x='Tuition_Status',
+        fig = px.bar(tuition_status_pct.reset_index(), 
+                     x='Tuition_Status', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
                      title="Pengaruh Status Pembayaran SPP terhadap Dropout (%)",
                      labels={'value': 'Persentase (%)', 'Tuition_Status': 'Status Pembayaran SPP'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
@@ -298,35 +303,41 @@ def create_tuition_analysis(df):
 
 def create_parents_qualification_analysis(df):
     """Create parents qualification analysis"""
-    parent_cols = [col for col in df.columns if 'qualification' in col.lower() or 'education' in col.lower()]
+    # Check for possible parent qualification columns with different naming conventions
+    parent_cols = []
+    possible_names = [
+        'Fathers_qualification', 'Mothers_qualification', 
+        "Father's_qualification", "Mother's_qualification",
+        'fathers_qualification', 'mothers_qualification',
+        'parent_qualification', 'qualification'
+    ]
     
-    if 'Mothers_qualification' in df.columns or 'Fathers_qualification' in df.columns:
-        # Use 'Mothers_qualification' if available, otherwise 'Fathers_qualification'
-        if 'Mothers_qualification' in df.columns:
-            parent_qual_col = 'Mothers_qualification'
-        elif 'Fathers_qualification' in df.columns:
-            parent_qual_col = 'Fathers_qualification'
-        else:
-            return None # Should not happen with the check above
+    for col_name in possible_names:
+        if col_name in df.columns:
+            parent_cols.append(col_name)
+    
+    if parent_cols:
+        # Use first available parent qualification column
+        parent_col = parent_cols[0]
         
-        # Map qualification codes to meaningful labels (you may need to adjust based on your data)
-        qual_map = {1: 'Dasar', 2: 'Menengah', 3: 'Menengah Atas', 4: 'Diploma', 5: 'Sarjana',
-                    19: 'Magister', 34: 'Doktor', 35: 'Lainnya'}
+        # Map qualification codes to meaningful labels
+        qual_map = {1: 'Dasar', 2: 'Menengah', 3: 'Menengah Atas', 4: 'Diploma', 5: 'Sarjana', 
+                   19: 'Magister', 34: 'Doktor', 35: 'Lainnya'}
         
         # Apply mapping, keep original value if not in map
-        df['Parent_Qualification'] = df[parent_qual_col].map(qual_map).fillna('Lainnya')
+        df['Parent_Qualification'] = df[parent_col].map(qual_map).fillna('Lainnya')
         
         qual_status = df.groupby(['Parent_Qualification', 'Target']).size().unstack(fill_value=0)
         qual_status_pct = qual_status.div(qual_status.sum(axis=1), axis=0) * 100
         
-        fig = px.bar(qual_status_pct.reset_index(),
-                     x='Parent_Qualification',
+        fig = px.bar(qual_status_pct.reset_index(), 
+                     x='Parent_Qualification', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
                      title="Pengaruh Pendidikan Orang Tua terhadap Status Siswa (%)",
                      labels={'value': 'Persentase (%)', 'Parent_Qualification': 'Tingkat Pendidikan Orang Tua'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
@@ -334,30 +345,90 @@ def create_parents_qualification_analysis(df):
         return fig
     return None
 
-# Adding a function for attendance analysis as it appeared in the error
 def create_attendance_analysis(df):
     """Create attendance analysis"""
-    if 'Daytime/evening_attendance' in df.columns:
-        df['Attendance_Label'] = df['Daytime/evening_attendance'].map({1: 'Daytime', 0: 'Evening'})
+    # Check for possible attendance columns with different naming conventions
+    attendance_cols = []
+    possible_names = [
+        'Daytime/evening_attendance', 'attendance', 'Attendance',
+        'daytime_evening_attendance', 'time_attendance'
+    ]
+    
+    for col_name in possible_names:
+        if col_name in df.columns:
+            attendance_cols.append(col_name)
+    
+    if attendance_cols:
+        attendance_col = attendance_cols[0]
         
-        attendance_status = df.groupby(['Attendance_Label', 'Target']).size().unstack(fill_value=0)
-        attendance_status_pct = attendance_status.div(attendance_status.sum(axis=1), axis=0) * 100
+        # Create attendance label based on the values in the column
+        df['Attendance_Label'] = df[attendance_col].map({1: 'Daytime', 0: 'Evening'})
         
-        fig = px.bar(attendance_status_pct.reset_index(),
-                     x='Attendance_Label',
+        # If mapping doesn't work, try different approach
+        if df['Attendance_Label'].isna().all():
+            unique_vals = df[attendance_col].unique()
+            if len(unique_vals) == 2:
+                df['Attendance_Label'] = df[attendance_col].map({unique_vals[0]: 'Type A', unique_vals[1]: 'Type B'})
+        
+        if not df['Attendance_Label'].isna().all():
+            attendance_status = df.groupby(['Attendance_Label', 'Target']).size().unstack(fill_value=0)
+            attendance_status_pct = attendance_status.div(attendance_status.sum(axis=1), axis=0) * 100
+            
+            fig = px.bar(attendance_status_pct.reset_index(), 
+                         x='Attendance_Label', 
+                         y=['Dropout', 'Enrolled', 'Graduate'],
+                         title="Pengaruh Waktu Kehadiran terhadap Status Siswa (%)",
+                         labels={'value': 'Persentase (%)', 'Attendance_Label': 'Waktu Kehadiran'},
+                         color_discrete_map={
+                             'Dropout': '#ff6b6b',
+                             'Enrolled': '#4ecdc4', 
+                             'Graduate': '#45b7d1'
+                         })
+            
+            fig.update_layout(barmode='stack', height=400)
+            return fig
+    
+    return None
+
+def create_parents_background_analysis(df):
+    """Create parents background analysis"""
+    # Check for possible mother qualification columns
+    mother_cols = []
+    possible_names = [
+        'Mothers_qualification', "Mother's_qualification", 
+        'mothers_qualification', 'mother_qualification'
+    ]
+    
+    for col_name in possible_names:
+        if col_name in df.columns:
+            mother_cols.append(col_name)
+    
+    if mother_cols:
+        mother_col = mother_cols[0]
+        
+        # Create qualification groups
+        df['Mother_Qual_Group'] = pd.cut(df[mother_col],
+                                        bins=[0, 2, 4, 10, 50], 
+                                        labels=['Basic', 'Secondary', 'Higher', 'Advanced'])
+        
+        qual_status = df.groupby(['Mother_Qual_Group', 'Target']).size().unstack(fill_value=0)
+        qual_status_pct = qual_status.div(qual_status.sum(axis=1), axis=0) * 100
+        
+        fig = px.bar(qual_status_pct.reset_index(), 
+                     x='Mother_Qual_Group', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
-                     title="Pengaruh Kehadiran Siang/Malam terhadap Status Siswa (%)",
-                     labels={'value': 'Persentase (%)', 'Attendance_Label': 'Jenis Kehadiran'},
+                     title="Pengaruh Latar Belakang Pendidikan Ibu (%)",
+                     labels={'value': 'Persentase (%)', 'Mother_Qual_Group': 'Tingkat Pendidikan Ibu'},
                      color_discrete_map={
                          'Dropout': '#ff6b6b',
-                         'Enrolled': '#4ecdc4',
+                         'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
         
         fig.update_layout(barmode='stack', height=400)
         return fig
+    
     return None
-
 
 def create_insights_summary(df):
     """Create insights summary"""
@@ -403,158 +474,179 @@ def create_insights_summary(df):
     
     return insights
 
-# Main application logic
-st.sidebar.header("📁 Data Source")
+def main():
+    # Main application logic
+    st.sidebar.header("📁 Data Source")
 
-# Load data
-df, file_path = load_csv_from_path()
+    # Load data
+    df, file_path = load_csv_from_path()
 
-if df is not None:
-    st.sidebar.success(f"✅ Data loaded: {file_path}")
-else:
-    st.sidebar.warning("⚠️ No CSV file found automatically")
-    uploaded_file = st.sidebar.file_uploader("Upload CSV file", type="csv")
-    
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.sidebar.success("✅ Data loaded from upload")
-        except Exception as e:
-            st.sidebar.error(f"❌ Error: {e}")
-            df = None
+    if df is not None:
+        st.sidebar.success(f"✅ Data loaded: {file_path}")
     else:
-        st.sidebar.info("📊 Using sample data for demo")
-        df = create_sample_data()
+        st.sidebar.warning("⚠️ No CSV file found automatically")
+        uploaded_file = st.sidebar.file_uploader("Upload CSV file", type="csv")
+        
+        if uploaded_file is not None:
+            try:
+                df = pd.read_csv(uploaded_file)
+                st.sidebar.success("✅ Data loaded from upload")
+            except Exception as e:
+                st.sidebar.error(f"❌ Error: {e}")
+                df = None
+        else:
+            st.sidebar.info("📊 Using sample data for demo")
+            df = create_sample_data()
 
-# Process data
-if df is not None:
-    # Handle Status/Target column
-    if 'Status' in df.columns:
-        df = df.rename(columns={'Status': 'Target'})
-        st.sidebar.success("✅ Column 'Status' renamed to 'Target'")
-    elif 'Target' not in df.columns:
-        st.error("❌ Column 'Status' or 'Target' not found in dataset")
-        st.stop()
+    # Process data
+    if df is not None:
+        # Handle Status/Target column
+        if 'Status' in df.columns:
+            df = df.rename(columns={'Status': 'Target'})
+            st.sidebar.success("✅ Column 'Status' renamed to 'Target'")
+        elif 'Target' not in df.columns:
+            st.error("❌ Column 'Status' or 'Target' not found in dataset")
+            st.stop()
 
-    # Display dataset info
-    st.sidebar.subheader("📊 Dataset Info")
-    st.sidebar.write(f"Rows: {df.shape[0]:,}")
-    st.sidebar.write(f"Columns: {df.shape[1]}")
-    
-    # Main dashboard content
-    st.markdown("---")
-    
-    # Overview Metrics
-    st.header("📈 Overview Metrics")
-    create_overview_metrics(df)
-    
-    st.markdown("---")
-    
-    # Main visualizations
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Distribusi Status Siswa")
-        fig_pie = create_status_distribution_pie(df)
-        st.plotly_chart(fig_pie, use_container_width=True)
-    
-    with col2:
-        st.subheader("👥 Analisis Berdasarkan Usia")
-        fig_age = create_age_dropout_analysis(df)
-        if fig_age:
-            st.plotly_chart(fig_age, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Additional analysis
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        st.subheader("🎓 Pengaruh Beasiswa")
-        fig_scholarship = create_scholarship_analysis(df)
-        if fig_scholarship:
-            st.plotly_chart(fig_scholarship, use_container_width=True)
+        # Display dataset info
+        st.sidebar.subheader("📊 Dataset Info")
+        st.sidebar.write(f"Rows: {df.shape[0]:,}")
+        st.sidebar.write(f"Columns: {df.shape[1]}")
+        
+        # Show available columns for debugging
+        st.sidebar.subheader("📋 Available Columns")
+        st.sidebar.write(list(df.columns))
+        
+        # Main dashboard content
+        st.markdown("---")
+        
+        # Overview Metrics
+        st.header("📈 Overview Metrics")
+        create_overview_metrics(df)
+        
+        st.markdown("---")
+        
+        # Main visualizations
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Distribusi Status Siswa")
+            fig_pie = create_status_distribution_pie(df)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        
+        with col2:
+            st.subheader("👥 Analisis Berdasarkan Usia")
+            fig_age = create_age_dropout_analysis(df)
+            if fig_age:
+                st.plotly_chart(fig_age, use_container_width=True)
+            else:
+                st.info("Data usia tidak tersedia")
+        
+        st.markdown("---")
+        
+        # Additional analysis
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            st.subheader("🎓 Pengaruh Beasiswa")
+            fig_scholarship = create_scholarship_analysis(df)
+            if fig_scholarship:
+                st.plotly_chart(fig_scholarship, use_container_width=True)
+            else:
+                st.info("Data beasiswa tidak tersedia")
+        
+        with col4:
+            st.subheader("👫 Analisis Gender")
+            fig_gender = create_gender_analysis(df)
+            if fig_gender:
+                st.plotly_chart(fig_gender, use_container_width=True)
+            else:
+                st.info("Data gender tidak tersedia")
+        
+        st.markdown("---")
+        
+        # Academic and financial factors
+        col5, col6 = st.columns(2)
+        
+        with col5:
+            st.subheader("📚 Prestasi Akademik")
+            fig_grades = create_grades_analysis(df)
+            if fig_grades:
+                st.plotly_chart(fig_grades, use_container_width=True)
+            else:
+                st.info("Data nilai tidak tersedia")
+        
+        with col6:
+            st.subheader("💰 Status Pembayaran SPP")
+            fig_tuition = create_tuition_analysis(df)
+            if fig_tuition:
+                st.plotly_chart(fig_tuition, use_container_width=True)
+            else:
+                st.info("Data pembayaran SPP tidak tersedia")
+        
+        st.markdown("---")
+        
+        # Parents education and attendance
+        col7, col8 = st.columns(2)
+        
+        with col7:
+            st.subheader("👨‍👩‍👧‍👦 Pendidikan Orang Tua")
+            fig_parents = create_parents_qualification_analysis(df)
+            if fig_parents:
+                st.plotly_chart(fig_parents, use_container_width=True)
+            else:
+                st.info("Data pendidikan orang tua tidak tersedia")
+        
+        with col8:
+            st.subheader("🕐 Waktu Kehadiran")
+            fig_attendance = create_attendance_analysis(df)
+            if fig_attendance:
+                st.plotly_chart(fig_attendance, use_container_width=True)
+            else:
+                st.info("Data waktu kehadiran tidak tersedia")
+        
+        st.markdown("---")
+        
+        # Parents background
+        st.subheader("👩‍🎓 Latar Belakang Pendidikan Ibu")
+        fig_parents_bg = create_parents_background_analysis(df)
+        if fig_parents_bg:
+            st.plotly_chart(fig_parents_bg, use_container_width=True)
         else:
-            st.info("Data beasiswa tidak tersedia")
-    
-    with col4:
-        st.subheader("👫 Analisis Gender")
-        fig_gender = create_gender_analysis(df)
-        if fig_gender:
-            st.plotly_chart(fig_gender, use_container_width=True)
-        else:
-            st.info("Data gender tidak tersedia")
-    
-    st.markdown("---")
-    
-    # Academic and financial factors
-    col5, col6 = st.columns(2)
-    
-    with col5:
-        st.subheader("📚 Prestasi Akademik")
-        fig_grades = create_grades_analysis(df)
-        if fig_grades:
-            st.plotly_chart(fig_grades, use_container_width=True)
-        else:
-            st.info("Data nilai tidak tersedia")
-    
-    with col6:
-        st.subheader("💰 Status Pembayaran SPP")
-        fig_tuition = create_tuition_analysis(df)
-        if fig_tuition:
-            st.plotly_chart(fig_tuition, use_container_width=True)
-        else:
-            st.info("Data pembayaran SPP tidak tersedia")
-    
-    st.markdown("---")
+            st.info("Data latar belakang pendidikan ibu tidak tersedia")
+        
+        st.markdown("---")
+        
+        # Key Insights
+        st.header("💡 Key Insights & Rekomendasi")
+        insights = create_insights_summary(df)
+        
+        for insight in insights:
+            st.markdown(insight)
+        
+        st.markdown("### 🎯 Rekomendasi Aksi:")
+        st.markdown("""
+        1. **🎓 Program Dukungan Akademik**: Fokus pada siswa dengan nilai rendah semester pertama
+        2. **💰 Bantuan Keuangan**: Perluas program beasiswa untuk siswa berisiko tinggi
+        3. **👥 Mentoring Program**: Buat program pendampingan khusus berdasarkan profil risiko
+        4. **📊 Early Warning System**: Implementasikan sistem deteksi dini berdasarkan faktor-faktor kunci
+        5. **🏫 Dukungan Keluarga**: Program edukasi untuk orang tua tentang pentingnya dukungan akademik
+        """)
+        
+        # Data preview section
+        if st.checkbox("📋 Tampilkan Preview Data"):
+            st.subheader("Data Preview")
+            st.dataframe(df.head(100))
 
-    # Attendance analysis
-    st.subheader("⏰ Analisis Kehadiran")
-    fig_attendance = create_attendance_analysis(df)
-    if fig_attendance:
-        st.plotly_chart(fig_attendance, use_container_width=True)
     else:
-        st.info("Data kehadiran tidak tersedia")
-    
-    st.markdown("---")
-    
-    # Parents education
-    st.subheader("👨‍👩‍👧‍👦 Pendidikan Orang Tua")
-    fig_parents = create_parents_qualification_analysis(df)
-    if fig_parents:
-        st.plotly_chart(fig_parents, use_container_width=True)
-    else:
-        st.info("Data pendidikan orang tua tidak tersedia")
-    
-    st.markdown("---")
-    
-    # Key Insights
-    st.header("💡 Key Insights & Rekomendasi")
-    insights = create_insights_summary(df)
-    
-    for insight in insights:
-        st.markdown(insight)
-    
-    st.markdown("### 🎯 Rekomendasi Aksi:")
-    st.markdown("""
-    1. **🎓 Program Dukungan Akademik**: Fokus pada siswa dengan nilai rendah semester pertama
-    2. **💰 Bantuan Keuangan**: Perluas program beasiswa untuk siswa berisiko tinggi
-    3. **👥 Mentoring Program**: Buat program pendampingan khusus berdasarkan profil risiko
-    3. **📊 Early Warning System**: Implementasikan sistem deteksi dini berdasarkan faktor-faktor kunci
-    4. **🏫 Dukungan Keluarga**: Program edukasi untuk orang tua tentang pentingnya dukungan akademik
-    """)
-    
-    # Data preview section
-    if st.checkbox("📋 Tampilkan Preview Data"):
-        st.subheader("Data Preview")
-        st.dataframe(df.head(100))
+        st.error("❌ Cannot load data. Please ensure CSV file is available.")
+        st.markdown("""
+        **Troubleshooting:**
+        1. Ensure CSV file is in the same directory as the script
+        2. Check file name (case-sensitive)
+        3. Make sure file is not open in another application
+        4. Try uploading the file using the sidebar uploader
+        """)
 
-else:
-    st.error("❌ Cannot load data. Please ensure CSV file is available.")
-    st.markdown("""
-    **Troubleshooting:**
-    1. Ensure CSV file is in the same directory as the script
-    2. Check file name (case-sensitive)
-    3. Make sure file is not open in another application
-    4. Try uploading the file using the sidebar uploader
-    """)
+if __name__ == "__main__":
+    main()
