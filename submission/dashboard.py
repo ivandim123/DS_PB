@@ -41,6 +41,7 @@ def load_csv_from_path():
         os.path.join(script_dir, "data", "data.csv")
     ]
     
+    
     # Check for any CSV file in current directory
     try:
         current_dir_files = [f for f in os.listdir('.') if f.endswith('.csv')]
@@ -71,7 +72,8 @@ def load_csv_from_path():
         except Exception as e:
             st.sidebar.write(f"❌ Error: {path}")
             continue
-    
+    if 'Age' not in df.columns and 'Age_at_enrollment' in df.columns:
+    df['Age'] = df['Age_at_enrollment']
     return None, None
 
 @st.cache_data
@@ -175,17 +177,17 @@ def create_status_distribution_pie(df):
 
 def create_age_dropout_analysis(df):
     """Create age vs dropout analysis"""
-    if 'Age' not in df.columns:
+    if 'Age_at_enrollment' not in df.columns:
         return None
-        
-    # Age groups
+
+    df['Age'] = df['Age_at_enrollment']
     df['Age_Group'] = pd.cut(df['Age'], 
-                            bins=[16, 20, 23, 26, 100], 
-                            labels=['17-20', '21-23', '24-26', '27+'])
-    
+                              bins=[16, 20, 23, 26, 100], 
+                              labels=['17-20', '21-23', '24-26', '27+'])
+
     age_status = df.groupby(['Age_Group', 'Target']).size().unstack(fill_value=0)
     age_status_pct = age_status.div(age_status.sum(axis=1), axis=0) * 100
-    
+
     fig = px.bar(age_status_pct.reset_index(), 
                  x='Age_Group', 
                  y=['Dropout', 'Enrolled', 'Graduate'],
@@ -196,7 +198,7 @@ def create_age_dropout_analysis(df):
                      'Enrolled': '#4ecdc4', 
                      'Graduate': '#45b7d1'
                  })
-    
+
     fig.update_layout(barmode='stack', height=400)
     return fig
 
@@ -247,21 +249,19 @@ def create_gender_analysis(df):
 
 def create_grades_analysis(df):
     """Create grades analysis"""
-    grade_cols = [col for col in df.columns if 'Grade' in col or 'grade' in col]
-    
+    grade_cols = ['Curricular_units_1st_sem_grade'] if 'Curricular_units_1st_sem_grade' in df.columns else []
+
     if grade_cols:
-        # Use first available grade column
         grade_col = grade_cols[0]
-        
-        # Create grade categories
+
         df['Grade_Category'] = pd.cut(df[grade_col], 
                                      bins=[0, 10, 14, 17, 20], 
                                      labels=['Rendah (0-10)', 'Sedang (10-14)', 
-                                            'Baik (14-17)', 'Sangat Baik (17-20)'])
-        
+                                             'Baik (14-17)', 'Sangat Baik (17-20)'])
+
         grade_status = df.groupby(['Grade_Category', 'Target']).size().unstack(fill_value=0)
         grade_status_pct = grade_status.div(grade_status.sum(axis=1), axis=0) * 100
-        
+
         fig = px.bar(grade_status_pct.reset_index(), 
                      x='Grade_Category', 
                      y=['Dropout', 'Enrolled', 'Graduate'],
@@ -272,7 +272,7 @@ def create_grades_analysis(df):
                          'Enrolled': '#4ecdc4', 
                          'Graduate': '#45b7d1'
                      })
-        
+
         fig.update_layout(barmode='stack', height=400)
         return fig
     return None
@@ -347,47 +347,25 @@ def create_parents_qualification_analysis(df):
 
 def create_attendance_analysis(df):
     """Create attendance analysis"""
-    # Check for possible attendance columns with different naming conventions
-    attendance_cols = []
-    possible_names = [
-        'Daytime/evening_attendance', 'attendance', 'Attendance',
-        'daytime_evening_attendance', 'time_attendance'
-    ]
-    
-    for col_name in possible_names:
-        if col_name in df.columns:
-            attendance_cols.append(col_name)
-    
-    if attendance_cols:
-        attendance_col = attendance_cols[0]
-        
-        # Create attendance label based on the values in the column
-        df['Attendance_Label'] = df[attendance_col].map({1: 'Daytime', 0: 'Evening'})
-        
-        # If mapping doesn't work, try different approach
-        if df['Attendance_Label'].isna().all():
-            unique_vals = df[attendance_col].unique()
-            if len(unique_vals) == 2:
-                df['Attendance_Label'] = df[attendance_col].map({unique_vals[0]: 'Type A', unique_vals[1]: 'Type B'})
-        
-        if not df['Attendance_Label'].isna().all():
-            attendance_status = df.groupby(['Attendance_Label', 'Target']).size().unstack(fill_value=0)
-            attendance_status_pct = attendance_status.div(attendance_status.sum(axis=1), axis=0) * 100
-            
-            fig = px.bar(attendance_status_pct.reset_index(), 
-                         x='Attendance_Label', 
-                         y=['Dropout', 'Enrolled', 'Graduate'],
-                         title="Pengaruh Waktu Kehadiran terhadap Status Siswa (%)",
-                         labels={'value': 'Persentase (%)', 'Attendance_Label': 'Waktu Kehadiran'},
-                         color_discrete_map={
-                             'Dropout': '#ff6b6b',
-                             'Enrolled': '#4ecdc4', 
-                             'Graduate': '#45b7d1'
-                         })
-            
-            fig.update_layout(barmode='stack', height=400)
-            return fig
-    
+    if 'Daytime_evening_attendance' in df.columns:
+        df['Attendance_Label'] = df['Daytime_evening_attendance'].map({1: 'Daytime', 0: 'Evening'})
+
+        attendance_status = df.groupby(['Attendance_Label', 'Target']).size().unstack(fill_value=0)
+        attendance_status_pct = attendance_status.div(attendance_status.sum(axis=1), axis=0) * 100
+
+        fig = px.bar(attendance_status_pct.reset_index(), 
+                     x='Attendance_Label', 
+                     y=['Dropout', 'Enrolled', 'Graduate'],
+                     title="Pengaruh Waktu Kehadiran terhadap Status Siswa (%)",
+                     labels={'value': 'Persentase (%)', 'Attendance_Label': 'Waktu Kehadiran'},
+                     color_discrete_map={
+                         'Dropout': '#ff6b6b',
+                         'Enrolled': '#4ecdc4', 
+                         'Graduate': '#45b7d1'
+                     })
+
+        fig.update_layout(barmode='stack', height=400)
+        return fig
     return None
 
 def create_parents_background_analysis(df):
