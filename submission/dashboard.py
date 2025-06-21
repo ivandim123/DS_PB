@@ -405,50 +405,13 @@ def create_attendance_analysis(df):
     """Analisis pola kehadiran"""
     st.header("🕐 Analisis Pola Kehadiran")
     
+    # --- Add this line to debug ---
+    st.write("Columns in DataFrame:", df.columns.tolist())
+    # --- End debug line ---
+
     # Map attendance pattern
     df['Attendance_Label'] = df['Daytime/evening_attendance'].map({1: 'Daytime', 0: 'Evening'})
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Attendance pattern by status
-        attendance_status = df.groupby(['Attendance_Label', 'Status']).size().reset_index(name='Count')
-        fig_attendance = px.bar(
-            attendance_status,
-            x='Attendance_Label',
-            y='Count',
-            color='Status',
-            color_discrete_map={
-                'Graduate': '#2E8B57',
-                'Enrolled': '#4682B4',
-                'Dropout': '#DC143C'
-            },
-            title="Status Siswa Berdasarkan Pola Kehadiran"
-        )
-        fig_attendance.update_layout(xaxis_title="Pola Kehadiran", yaxis_title="Jumlah Siswa")
-        st.plotly_chart(fig_attendance, use_container_width=True)
-    
-    with col2:
-        # Dropout rate by attendance pattern
-        dropout_by_attendance = df.groupby('Attendance_Label').apply(
-            lambda x: (x['Status'] == 'Dropout').sum() / len(x) * 100
-        ).reset_index(name='Dropout_Rate')
-        
-        fig_dropout_attendance = px.bar(
-            dropout_by_attendance,
-            x='Attendance_Label',
-            y='Dropout_Rate',
-            color='Attendance_Label',
-            color_discrete_map={'Daytime': '#FFD700', 'Evening': '#4B0082'},
-            title="Tingkat Dropout Berdasarkan Pola Kehadiran"
-        )
-        fig_dropout_attendance.update_layout(
-            xaxis_title="Pola Kehadiran",
-            yaxis_title="Tingkat Dropout (%)",
-            showlegend=False
-        )
-        fig_dropout_attendance.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
-        st.plotly_chart(fig_dropout_attendance, use_container_width=True)
+    # ... rest of your code
 
 def create_parents_background_analysis(df):
     """Analisis latar belakang orang tua"""
