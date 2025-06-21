@@ -484,6 +484,10 @@ def main():
         elif 'Target' not in df.columns:
             st.error("❌ Column 'Status' or 'Target' not found in dataset")
             st.stop()
+        # Handle missing 'Age' column by using 'Age_at_enrollment'
+        if 'Age' not in df.columns and 'Age_at_enrollment' in df.columns:
+            df['Age'] = df['Age_at_enrollment']
+            st.sidebar.success("✅ 'Age' column created from 'Age_at_enrollment'")
 
         # Display dataset info
         st.sidebar.subheader("📊 Dataset Info")
